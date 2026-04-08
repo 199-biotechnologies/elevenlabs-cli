@@ -63,18 +63,28 @@ impl Default for UpdateConfig {
 }
 
 impl AppConfig {
-    /// Resolve the API key from config or environment, in that order.
+    /// Resolve the API key with the documented precedence: environment
+    /// variables win over the config file, which wins over (nothing).
+    /// CLI flags at the per-command level would win over both but we
+    /// don't currently expose a global `--api-key` flag.
+    ///
+    /// This matches the README's precedence ladder:
+    ///   CLI flags → env vars → config file → defaults
+    ///
+    /// Earlier versions had config > env by accident. Codex caught it.
     pub fn resolve_api_key(&self) -> Option<String> {
-        if let Some(k) = self.api_key.as_ref() {
-            let trimmed = k.trim();
-            if !trimmed.is_empty() {
-                return Some(trimmed.to_string());
-            }
-        }
+        // 1. Env var wins.
         if let Ok(k) = std::env::var("ELEVENLABS_API_KEY") {
             let trimmed = k.trim().to_string();
             if !trimmed.is_empty() {
                 return Some(trimmed);
+            }
+        }
+        // 2. Config file.
+        if let Some(k) = self.api_key.as_ref() {
+            let trimmed = k.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
             }
         }
         None
@@ -127,13 +137,16 @@ pub fn load() -> Result<AppConfig, AppError> {
         .extract()
         .map_err(|e| AppError::Config(e.to_string()))?;
 
-    // Respect the common ELEVENLABS_API_KEY env var.
-    if cfg.api_key.is_none() {
-        if let Ok(k) = std::env::var("ELEVENLABS_API_KEY") {
-            let trimmed = k.trim().to_string();
-            if !trimmed.is_empty() {
-                cfg.api_key = Some(trimmed);
-            }
+    // Documented precedence (README): env vars > config file > defaults.
+    // ELEVENLABS_API_KEY is the well-known name used by the whole
+    // ElevenLabs ecosystem — it must override anything from the TOML file
+    // so `config show` reflects what the client will actually send, and
+    // so setting the env var never quietly falls back to a stale key in
+    // ~/.config/.../config.toml.
+    if let Ok(k) = std::env::var("ELEVENLABS_API_KEY") {
+        let trimmed = k.trim().to_string();
+        if !trimmed.is_empty() {
+            cfg.api_key = Some(trimmed);
         }
     }
 

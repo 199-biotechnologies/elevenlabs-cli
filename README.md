@@ -19,7 +19,7 @@ TTS • STT • Sound Effects • Voice Cloning • Voice Design • Conversatio
 [![MSRV 1.85+](https://img.shields.io/badge/MSRV-1.85%2B-orange?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-Welcome-brightgreen?style=for-the-badge)](#contributing)
 
-[Install](#install) • [Quick start](#quick-start) • [Commands](#commands) • [Why](#why-a-cli-instead-of-an-mcp-server) • [For agents](#for-ai-agents) • [Config](#configuration)
+[Install](#install) • [Quick start](#quick-start) • [Commands](#commands) • [Why](#why-a-cli-instead-of-an-mcp-server) • [For agents](#for-ai-agents) • [Config](#configuration) • [**Contributing**](CONTRIBUTING.md) • [**AGENTS.md** (for LLM contributors)](AGENTS.md)
 
 </div>
 
