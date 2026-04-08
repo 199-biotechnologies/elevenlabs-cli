@@ -89,7 +89,10 @@ async fn list(
         params.push(("search", s));
     }
 
-    let resp: serde_json::Value = client.get_json_with_query("/v1/voices", &params).await?;
+    // Use /v2/voices — the only endpoint that honours search/sort/page_size.
+    // /v1/voices ignores those params and returns the full library, which
+    // is what bit the voice-name resolver in v0.1.0.
+    let resp: serde_json::Value = client.get_json_with_query("/v2/voices", &params).await?;
     let voices: Vec<VoiceSummary> = resp
         .get("voices")
         .cloned()
@@ -340,7 +343,11 @@ async fn design(
         let fname = format!("voice_design_{gen_id}_{ts}_{i}.mp3");
         let out_path = Path::new(&dir).join(&fname);
         if let Some(parent) = out_path.parent() {
-            tokio::fs::create_dir_all(parent).await.ok();
+            if !parent.as_os_str().is_empty() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(AppError::Io)?;
+            }
         }
         tokio::fs::write(&out_path, &bytes)
             .await
@@ -387,9 +394,11 @@ async fn save_preview(
         "voice_name": voice_name,
         "voice_description": voice_description,
     });
-    let resp: serde_json::Value = client
-        .post_json("/v1/text-to-voice/create-voice-from-preview", &body)
-        .await?;
+    // Correct path per the official Python SDK:
+    //   elevenlabs-python/src/elevenlabs/text_to_voice/raw_client.py
+    //   line 167 — "v1/text-to-voice", method POST.
+    // v0.1.1 used "/v1/text-to-voice/create-voice-from-preview" which 404s.
+    let resp: serde_json::Value = client.post_json("/v1/text-to-voice", &body).await?;
     output::print_success_or(ctx, &resp, |v| {
         use owo_colors::OwoColorize;
         println!(

@@ -108,6 +108,7 @@ impl ElevenLabsClient {
 
     // ── POST JSON → raw bytes (for audio endpoints) ────────────────────────
 
+    #[allow(dead_code)]
     pub async fn post_json_bytes<B: Serialize>(
         &self,
         path: &str,
@@ -174,7 +175,7 @@ impl ElevenLabsClient {
 
     pub async fn delete(&self, path: &str) -> Result<(), AppError> {
         let resp = self.http.delete(self.url(path)).send().await?;
-        let _ = check_status(resp).await?;
+        check_status(resp).await?;
         Ok(())
     }
 
@@ -196,24 +197,26 @@ impl ElevenLabsClient {
 }
 
 /// Convert non-2xx responses into semantic `AppError`s with the ElevenLabs
-/// error body surfaced in the message when present.
+/// error body surfaced in the message when present. Defensively strips
+/// anything that looks like an `sk_*` key out of the body before surfacing
+/// it, so a misbehaving upstream proxy that echoes the auth header can't
+/// leak the key into our JSON envelope.
 async fn check_status(resp: reqwest::Response) -> Result<reqwest::Response, AppError> {
     let status = resp.status();
     if status.is_success() {
         return Ok(resp);
     }
     let code = status.as_u16();
-    // Body may be JSON `{ "detail": { "status": ..., "message": ... } }`
-    // or plain text — surface whichever we get.
     let body = resp.text().await.unwrap_or_default();
 
-    let message = extract_api_message(&body).unwrap_or_else(|| {
+    let raw = extract_api_message(&body).unwrap_or_else(|| {
         if body.is_empty() {
             format!("HTTP {code}")
         } else {
             body.chars().take(300).collect::<String>()
         }
     });
+    let message = redact_secrets(&raw);
 
     Err(match code {
         401 | 403 => AppError::AuthFailed(message),
@@ -223,6 +226,53 @@ async fn check_status(resp: reqwest::Response) -> Result<reqwest::Response, AppE
             message,
         },
     })
+}
+
+/// Scrub anything that looks like an ElevenLabs API key (`sk_` + hex/base62)
+/// out of arbitrary text. We match `sk_` followed by 10+ word chars and
+/// replace with `sk_***`. Belt-and-braces: the reqwest client already
+/// marks the auth header as sensitive, but we never want to rely on an
+/// upstream to behave.
+fn redact_secrets(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        // Look for literal "sk_" start.
+        if i + 3 <= bytes.len() && &bytes[i..i + 3] == b"sk_" {
+            // Find end of the alphanumeric/underscore run.
+            let mut j = i + 3;
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+                j += 1;
+            }
+            // Only redact if the run looks secret-shaped (>= 10 chars after sk_).
+            if j - (i + 3) >= 10 {
+                out.push_str("sk_***");
+                i = j;
+                continue;
+            }
+        }
+        // Copy one UTF-8 scalar at a time so we don't split codepoints.
+        let ch_len = utf8_char_len(bytes[i]);
+        out.push_str(&text[i..i + ch_len]);
+        i += ch_len;
+    }
+    out
+}
+
+fn utf8_char_len(b: u8) -> usize {
+    // Leading-byte pattern determines codepoint length. Continuation
+    // bytes (0x80..=0xbf) are treated as single-byte too; they shouldn't
+    // appear as the start byte if we walk the string correctly.
+    if b < 0xc0 {
+        1
+    } else if b < 0xe0 {
+        2
+    } else if b < 0xf0 {
+        3
+    } else {
+        4
+    }
 }
 
 fn extract_api_message(body: &str) -> Option<String> {

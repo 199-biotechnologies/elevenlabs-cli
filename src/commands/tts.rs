@@ -1,7 +1,7 @@
 //! text-to-speech: POST /v1/text-to-speech/{voice_id}
 
 use serde::Serialize;
-use std::io::{Read, Write};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::cli::TtsArgs;
 use crate::client::ElevenLabsClient;
@@ -20,11 +20,12 @@ struct TtsResult {
 }
 
 pub async fn run(ctx: Ctx, mut args: TtsArgs) -> Result<(), AppError> {
-    // Read stdin if `-`
+    // Read stdin if `-`. Use tokio::io to avoid blocking the runtime.
     if args.text == "-" {
         let mut s = String::new();
-        std::io::stdin()
+        tokio::io::stdin()
             .read_to_string(&mut s)
+            .await
             .map_err(AppError::Io)?;
         args.text = s.trim().to_string();
     }
@@ -94,7 +95,11 @@ pub async fn run(ctx: Ctx, mut args: TtsArgs) -> Result<(), AppError> {
     let bytes_written = audio.len();
 
     if args.stdout {
-        std::io::stdout().write_all(&audio).map_err(AppError::Io)?;
+        // Stream bytes to stdout via tokio::io; this runs on a blocking
+        // pool helper under the hood but doesn't block the async runtime.
+        let mut out = tokio::io::stdout();
+        out.write_all(&audio).await.map_err(AppError::Io)?;
+        out.flush().await.map_err(AppError::Io)?;
         // Don't print the envelope when writing raw bytes to stdout.
         return Ok(());
     }
@@ -132,8 +137,10 @@ pub async fn run(ctx: Ctx, mut args: TtsArgs) -> Result<(), AppError> {
 }
 
 async fn resolve_voice_name(client: &ElevenLabsClient, name: &str) -> Result<String, AppError> {
+    // /v2/voices is the search-enabled endpoint. /v1/voices ignores query
+    // params, which caused the silent-pick regression in v0.1.0.
     let query = [("search", name)];
-    let resp: serde_json::Value = client.get_json_with_query("/v1/voices", &query).await?;
+    let resp: serde_json::Value = client.get_json_with_query("/v2/voices", &query).await?;
     let voices = resp
         .get("voices")
         .and_then(|v| v.as_array())

@@ -161,24 +161,49 @@ pub fn load() -> Result<AppConfig, AppError> {
     Ok(cfg)
 }
 
-/// Write the given config to disk, creating the parent directory if needed.
-/// Sets 0600 permissions on Unix so the file isn't world-readable.
+/// Atomically write the given config to disk, setting 0600 permissions on
+/// Unix before the final rename. The write goes through a sibling temp
+/// file so concurrent readers never observe a partially-written config,
+/// and the temp file has 0600 the whole time so the secret is never
+/// briefly world-readable.
 pub fn save(cfg: &AppConfig) -> Result<PathBuf, AppError> {
     let path = config_path();
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
     }
+
     let toml = toml::to_string_pretty(cfg)
         .map_err(|e| AppError::Config(format!("serialising config: {e}")))?;
-    std::fs::write(&path, toml)?;
+
+    // Write to a sibling temp file, then rename.
+    let tmp_path = path.with_extension("toml.tmp");
 
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&path)?.permissions();
-        perms.set_mode(0o600);
-        std::fs::set_permissions(&path, perms)?;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .mode(0o600)
+            .open(&tmp_path)?;
+        f.write_all(toml.as_bytes())?;
+        f.sync_all().ok();
     }
+    #[cfg(not(unix))]
+    {
+        std::fs::write(&tmp_path, toml.as_bytes())?;
+    }
+
+    std::fs::rename(&tmp_path, &path).map_err(|e| {
+        // On rename failure, try to clean up the temp file so we don't
+        // leave a world-readable-ish file with a secret in it.
+        let _ = std::fs::remove_file(&tmp_path);
+        AppError::Io(e)
+    })?;
 
     Ok(path)
 }

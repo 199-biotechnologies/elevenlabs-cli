@@ -424,6 +424,10 @@ pub enum MusicAction {
         #[arg(long)]
         length_ms: Option<u32>,
 
+        /// Output audio format (default mp3_44100_128)
+        #[arg(long)]
+        format: Option<String>,
+
         /// Output file path
         #[arg(short, long)]
         output: Option<String>,

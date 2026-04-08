@@ -159,10 +159,10 @@ async fn convert(
 }
 
 async fn resolve_voice_by_name(client: &ElevenLabsClient, name: &str) -> Result<String, AppError> {
-    // Same client-side match strategy as tts.rs — the server-side search
-    // isn't a strict substring filter, so we resolve locally.
+    // Same client-side match strategy as tts.rs. /v2/voices is required
+    // because /v1/voices silently ignores the `search` param.
     let query = [("search", name)];
-    let resp: serde_json::Value = client.get_json_with_query("/v1/voices", &query).await?;
+    let resp: serde_json::Value = client.get_json_with_query("/v2/voices", &query).await?;
     let voices = resp
         .get("voices")
         .and_then(|v| v.as_array())
