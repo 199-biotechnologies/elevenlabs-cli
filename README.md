@@ -315,7 +315,7 @@ elevenlabs agent-info          # JSON capability manifest (alias: info)
 
 ## For AI agents
 
-This CLI is built to be called by autonomous agents. It follows the [Agent CLI Framework](https://github.com/199-biotechnologies/agent-cli-framework) patterns:
+This CLI is built to be called by autonomous agents. It follows the [Agent CLI Framework](https://github.com/paperfoot/agent-cli-framework) patterns:
 
 - **`agent-info`** returns a complete capability manifest as JSON — no MCP server required, no schema file to fetch.
 - **Dual output**: terminal users get colour + tables, piped/`--json` callers get a stable `{version, status, data|error}` envelope.
@@ -476,7 +476,7 @@ MIT © 2026 [199 Biotechnologies](https://github.com/199-biotechnologies). See [
 
 <div align="center">
 
-Built by [Boris Djordjevic](https://github.com/longevityboris) at [199 Biotechnologies](https://github.com/199-biotechnologies) using the [Agent CLI Framework](https://github.com/199-biotechnologies/agent-cli-framework).
+Built by [Boris Djordjevic](https://github.com/longevityboris) at [199 Biotechnologies](https://github.com/199-biotechnologies) using the [Agent CLI Framework](https://github.com/paperfoot/agent-cli-framework).
 
 **If this saves you context or setup time:**
 

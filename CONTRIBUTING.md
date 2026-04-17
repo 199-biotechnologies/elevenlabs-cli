@@ -41,7 +41,7 @@ cargo build --release            # ensure release profile still builds
 ## Design principles (the short version)
 
 The CLI follows the
-[**agent-cli-framework**](https://github.com/199-biotechnologies/agent-cli-framework)
+[**agent-cli-framework**](https://github.com/paperfoot/agent-cli-framework)
 philosophy: it's built to be callable by both humans and AI agents, with a
 stable JSON envelope, semantic exit codes, and a self-describing
 manifest (`elevenlabs agent-info`).

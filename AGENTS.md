@@ -42,7 +42,7 @@ checkout — future agents and humans have no way to benefit from them.
 ## Framework invariants (non-negotiable)
 
 This CLI implements the
-[**199-biotechnologies/agent-cli-framework**](https://github.com/199-biotechnologies/agent-cli-framework)
+[**paperfoot/agent-cli-framework**](https://github.com/paperfoot/agent-cli-framework)
 patterns. **These are contracts, not suggestions.** If a change violates
 any of them, it gets rejected.
 
