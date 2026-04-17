@@ -108,27 +108,43 @@ impl AppError {
     }
 }
 
-/// If `ELEVENLABS_API_KEY` is set AND the saved config.toml has a different
-/// `api_key`, return a tailored remediation. Env wins over file, so this
-/// situation looks like "the CLI saved my key but auth still fails" unless we
-/// surface it. Mask both values when showing them.
+/// Build a tailored auth-failure suggestion that explains which source the
+/// bad key came from. Precedence is file > env (v0.1.6+). Both values are
+/// masked before display.
 fn env_shadow_hint() -> Option<String> {
     let env_key = std::env::var("ELEVENLABS_API_KEY")
         .ok()
         .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())?;
-    let file_key = read_file_api_key()?;
-    if env_key == file_key {
-        return None;
+        .filter(|s| !s.is_empty());
+    let file_key = read_file_api_key();
+
+    match (env_key.as_deref(), file_key.as_deref()) {
+        // File present and env differs: file was the one used; file is bad.
+        (Some(env), Some(file)) if env != file => Some(format!(
+            "The saved config file key ({}) was used and rejected. Your shell \
+             also has ELEVENLABS_API_KEY set to a different value ({}), but since \
+             v0.1.6 the saved file takes precedence. Fix: re-issue a key at \
+             https://elevenlabs.io/app/settings/api-keys then run: \
+             elevenlabs config init --api-key <sk_...>",
+            crate::config::mask_secret(file),
+            crate::config::mask_secret(env),
+        )),
+        // Only file is set and it's bad.
+        (None, Some(file)) => Some(format!(
+            "The saved config file key ({}) was rejected. Re-issue at \
+             https://elevenlabs.io/app/settings/api-keys and run: \
+             elevenlabs config init --api-key <sk_...>",
+            crate::config::mask_secret(file),
+        )),
+        // Only env is set and it's bad.
+        (Some(env), None) => Some(format!(
+            "The ELEVENLABS_API_KEY env var ({}) was used and rejected. Either \
+             export a new valid key, or persist one with: \
+             elevenlabs config init --api-key <sk_...>",
+            crate::config::mask_secret(env),
+        )),
+        _ => None,
     }
-    Some(format!(
-        "ELEVENLABS_API_KEY ({}) is set in your environment and overrides the saved \
-         config.toml ({}). The env var value is what was sent and it's invalid. \
-         Fix by either: (1) unset ELEVENLABS_API_KEY (the saved file value will take over), \
-         or (2) re-issue a new key and run: elevenlabs config init --api-key <sk_...>",
-        crate::config::mask_secret(&env_key),
-        crate::config::mask_secret(&file_key),
-    ))
 }
 
 /// Read `api_key` straight from the on-disk TOML file without the env-var

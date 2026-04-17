@@ -1,10 +1,25 @@
-//! Config loading with 3-tier precedence:
-//!   1. Compiled defaults
-//!   2. TOML file (~/.config/elevenlabs-cli/config.toml)
-//!   3. Environment variables (ELEVENLABS_* or ELEVENLABS_CLI_*)
+//! Config loading. For the API key specifically, the resolution order is:
 //!
-//! The API key resolves from any of: `--api-key` flag (per-command where
-//! supported), `ELEVENLABS_API_KEY` env var, or `api_key` in config.toml.
+//!   1. `--api-key` flag on a command (if present)
+//!   2. `api_key` in config.toml                  (EXPLICIT: user ran `config init`)
+//!   3. `ELEVENLABS_API_KEY` env var              (AMBIENT: shell / .env files)
+//!   4. (not set → `AuthMissing`)
+//!
+//! As of v0.1.6 the saved config file wins over the env var. Previously the
+//! env var won, which caused a silent-auth-failure footgun: a stale/rotated
+//! ELEVENLABS_API_KEY left exported by another project would override the
+//! key the user just ran `elevenlabs config init` to save, producing only
+//! "Invalid API key" with no hint about the real cause.
+//!
+//! CI / containerised setups are unaffected — they don't ship a config.toml,
+//! so the env var is still picked up as the only available source.
+//!
+//! Escape hatches when you need the env var to take precedence despite a
+//! saved config:
+//!   - `env -u ELEVENLABS_API_KEY <cmd>` — drop env for one command, but
+//!     actually this doesn't apply anymore — file wins anyway.
+//!   - `elevenlabs config set api_key <new>` — overwrite the saved value.
+//!   - Delete the `api_key` line from config.toml.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -97,17 +112,16 @@ pub struct AuthKeyState {
 }
 
 impl AuthKeyState {
-    /// Read the current state from the environment and the given loaded
-    /// config. The config loader pre-populates `api_key` with the env value
-    /// when set, so we re-read the env directly to distinguish the two.
+    /// Read the raw state of both sources. Both values are reported
+    /// independently of precedence so callers can diagnose "both set but
+    /// only one is used" situations.
     pub fn snapshot(file_key_from_config: Option<&str>) -> Self {
         let env_key = std::env::var("ELEVENLABS_API_KEY")
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
-        // `config::load()` overwrites `cfg.api_key` with the env value when the
-        // env is set; re-read the raw TOML file directly so we can report the
-        // two sources independently.
+        // Always prefer re-reading the on-disk TOML so env-var overlays in
+        // `config::load()` don't masquerade as a file-sourced value.
         let file_key = read_file_api_key().or_else(|| file_key_from_config.map(String::from));
         Self {
             env_key,
@@ -115,26 +129,27 @@ impl AuthKeyState {
         }
     }
 
-    /// Which source is being used for auth right now.
+    /// Which source is being used for auth right now. File wins when both
+    /// are set — see the module docstring for why.
     pub fn effective_source(&self) -> AuthSource {
-        if self.env_key.is_some() {
-            AuthSource::Env
-        } else if self.file_key.is_some() {
+        if self.file_key.is_some() {
             AuthSource::File
+        } else if self.env_key.is_some() {
+            AuthSource::Env
         } else {
             AuthSource::None
         }
     }
 
-    /// The value that actually ships on the wire (env wins over file).
+    /// The value that actually ships on the wire (file wins over env).
     pub fn effective_key(&self) -> Option<&str> {
-        self.env_key.as_deref().or(self.file_key.as_deref())
+        self.file_key.as_deref().or(self.env_key.as_deref())
     }
 
-    /// True iff the env var and file hold different non-empty values.
-    /// This is the case that silently breaks auth: the env is stale/invalid
-    /// and the user's saved-config key is ignored.
-    pub fn env_shadows_file(&self) -> bool {
+    /// True iff the env var is set to a value DIFFERENT from the saved
+    /// config file key, so it's being ignored. Callers surface this so users
+    /// aren't surprised by "I exported ELEVENLABS_API_KEY=X but X wasn't used".
+    pub fn env_ignored_by_file(&self) -> bool {
         matches!(
             (&self.env_key, &self.file_key),
             (Some(e), Some(f)) if e.trim() != f.trim()
@@ -157,28 +172,27 @@ fn read_file_api_key() -> Option<String> {
 }
 
 impl AppConfig {
-    /// Resolve the API key with the documented precedence: environment
-    /// variables win over the config file, which wins over (nothing).
-    /// CLI flags at the per-command level would win over both but we
-    /// don't currently expose a global `--api-key` flag.
+    /// Resolve the API key per the v0.1.6 precedence ladder:
+    ///   1. config.toml `api_key` (the value the user explicitly saved)
+    ///   2. `ELEVENLABS_API_KEY` env var (ambient fallback)
     ///
-    /// This matches the README's precedence ladder:
-    ///   CLI flags → env vars → config file → defaults
-    ///
-    /// Earlier versions had config > env by accident. Codex caught it.
+    /// See the module docstring for the rationale.
     pub fn resolve_api_key(&self) -> Option<String> {
-        // 1. Env var wins.
-        if let Ok(k) = std::env::var("ELEVENLABS_API_KEY") {
-            let trimmed = k.trim().to_string();
-            if !trimmed.is_empty() {
-                return Some(trimmed);
-            }
-        }
-        // 2. Config file.
+        // 1. Saved config file wins. `self.api_key` was populated from the
+        //    TOML by `load()`; the env overlay is intentionally not applied
+        //    to this field anymore.
         if let Some(k) = self.api_key.as_ref() {
             let trimmed = k.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());
+            }
+        }
+        // 2. Env var as a fallback — used by CI / ephemeral containers that
+        //    never run `config init`.
+        if let Ok(k) = std::env::var("ELEVENLABS_API_KEY") {
+            let trimmed = k.trim().to_string();
+            if !trimmed.is_empty() {
+                return Some(trimmed);
             }
         }
         None
@@ -232,30 +246,17 @@ pub fn load() -> Result<AppConfig, AppError> {
     use figment::Figment;
     use figment::providers::{Env, Format as _, Serialized, Toml};
 
-    // Two env prefixes are accepted — `ELEVENLABS_CLI_` is canonical per
-    // figment split convention, but `ELEVENLABS_API_KEY` is the well-known
-    // name the rest of the ecosystem uses. We merge both, letting the latter
-    // win.
+    // `api_key` comes from the TOML file only. We still honour
+    // `ELEVENLABS_CLI_*` for non-secret defaults (voice_id, model_id, etc.),
+    // but never for the API key — `resolve_api_key()` layers
+    // `ELEVENLABS_API_KEY` on top as a fallback when the file is empty.
     let base = Figment::from(Serialized::defaults(AppConfig::default()))
         .merge(Toml::file(config_path()))
         .merge(Env::prefixed("ELEVENLABS_CLI_").split("_"));
 
-    let mut cfg: AppConfig = base
+    let cfg: AppConfig = base
         .extract()
         .map_err(|e| AppError::Config(e.to_string()))?;
-
-    // Documented precedence (README): env vars > config file > defaults.
-    // ELEVENLABS_API_KEY is the well-known name used by the whole
-    // ElevenLabs ecosystem — it must override anything from the TOML file
-    // so `config show` reflects what the client will actually send, and
-    // so setting the env var never quietly falls back to a stale key in
-    // ~/.config/.../config.toml.
-    if let Ok(k) = std::env::var("ELEVENLABS_API_KEY") {
-        let trimmed = k.trim().to_string();
-        if !trimmed.is_empty() {
-            cfg.api_key = Some(trimmed);
-        }
-    }
 
     Ok(cfg)
 }

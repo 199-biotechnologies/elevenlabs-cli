@@ -1,5 +1,12 @@
-//! Contract test: env var must win over the config file per the
-//! documented precedence ladder (CLI flags > env > config > defaults).
+//! Contract tests for API-key precedence. Order as of v0.1.6:
+//!
+//!   1. `--api-key` flag (not yet implemented globally; noted for later)
+//!   2. `api_key` in config.toml                  (explicit saved value)
+//!   3. `ELEVENLABS_API_KEY` env var              (ambient fallback)
+//!
+//! The flip from env-wins-over-file to file-wins-over-env was the fix for
+//! the silent-auth-failure footgun where a stale exported env var shadowed
+//! the key the user just ran `elevenlabs config init` to save.
 
 use assert_cmd::Command;
 use std::io::Write;
@@ -26,7 +33,10 @@ fn extract_api_key(stdout: &[u8]) -> String {
 }
 
 #[test]
-fn env_var_wins_over_config_file() {
+fn config_file_wins_over_env_var() {
+    // Regression: before v0.1.6 the env var won, which caused silent auth
+    // failures when a stale ELEVENLABS_API_KEY was left exported by another
+    // project. Now the explicit saved key wins.
     let (_dir, path) = temp_config("config_key_xxxxxxxxxxxx");
     let out = bin()
         .env("ELEVENLABS_CLI_CONFIG", &path)
@@ -41,12 +51,28 @@ fn env_var_wins_over_config_file() {
     );
     let masked = extract_api_key(&out.stdout);
     assert!(
-        masked.starts_with("env_ke"),
-        "expected env key to win, got masked={masked}"
+        masked.starts_with("config"),
+        "expected config-file key to win over env, got masked={masked}"
     );
+}
+
+#[test]
+fn env_var_used_as_fallback_when_no_file_key() {
+    // CI / container case: no config.toml on disk, only env is set. The env
+    // value should be used as the effective key.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml"); // does not exist
+    let out = bin()
+        .env("ELEVENLABS_CLI_CONFIG", &path)
+        .env("ELEVENLABS_API_KEY", "env_key_zzzzzzzzzzzzz")
+        .args(["config", "show", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let masked = extract_api_key(&out.stdout);
     assert!(
-        !masked.contains("config"),
-        "masked should not contain 'config_'"
+        masked.starts_with("env_ke"),
+        "env should win when no file key is saved, got masked={masked}"
     );
 }
 

@@ -154,7 +154,7 @@ pub fn run() {
         "config": {
             "path": crate::config::config_path().display().to_string(),
             "env_vars": {
-                "ELEVENLABS_API_KEY": "Your ElevenLabs API key (required) — wins over config file",
+                "ELEVENLABS_API_KEY": "Fallback API key used when config.toml has no api_key. Since v0.1.6 the saved config file wins; the env var is a fallback only.",
                 "ELEVENLABS_API_BASE_URL": "Override API base URL (default https://api.elevenlabs.io)",
                 "ELEVENLABS_CLI_CONFIG": "Full path override for config.toml (tests + power users)"
             }
