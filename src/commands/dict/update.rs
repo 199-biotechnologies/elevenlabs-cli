@@ -20,9 +20,10 @@ pub async fn run(
     archive: bool,
 ) -> Result<(), AppError> {
     if name.is_none() && description.is_none() && !archive {
-        return Err(AppError::InvalidInput(
-            "nothing to update — pass --name, --description, or --archive".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "nothing to update — pass --name, --description, or --archive".into(),
+            suggestion: None,
+        });
     }
 
     let mut body = serde_json::Map::new();

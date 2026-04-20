@@ -1,6 +1,13 @@
 //! music upload + video-to-music use multipart bodies. These tests lock
 //! in that the CLI sends the expected form-data shape (file part under
 //! the right field name, optional text fields attached).
+//!
+//! Contract per the SDK (verified April 2026):
+//!   - /v1/music/upload expects a part named `file`, optional text field
+//!     `extract_composition_plan` (bool). NO `name` or
+//!     `composition_plan` form fields.
+//!   - /v1/music/video-to-music expects the part named `videos` (NOT
+//!     `file`). NO `model_id` field.
 
 use assert_cmd::Command as AssertCmd;
 use std::io::Write;
@@ -20,12 +27,11 @@ fn temp_config_with_key(api_key: &str) -> (tempfile::TempDir, PathBuf) {
     (dir, cfg)
 }
 
-/// Minimal assertion: the request content-type must be multipart and the
-/// body must contain the expected field tokens. Full multipart parsing is
-/// overkill — we just want to know the CLI didn't silently switch to JSON
-/// or drop the fields.
+/// Assert the request is multipart and that the body contains all
+/// `expected_tokens`, and that none of the `forbidden_tokens` appear.
 struct AssertMultipartContains {
     expected_tokens: Vec<&'static str>,
+    forbidden_tokens: Vec<&'static str>,
     response: ResponseTemplate,
 }
 
@@ -47,22 +53,29 @@ impl Respond for AssertMultipartContains {
                 "expected multipart body to contain '{t}', full body:\n{body}"
             );
         }
+        for t in &self.forbidden_tokens {
+            assert!(
+                !body.contains(t),
+                "multipart body must NOT contain '{t}' (dropped in v0.2), full body:\n{body}"
+            );
+        }
         self.response.clone()
     }
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn music_upload_sends_multipart_with_file_and_name() {
+async fn music_upload_sends_multipart_with_file_and_extract_flag() {
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/music/upload"))
         .respond_with(AssertMultipartContains {
             expected_tokens: vec![
                 "name=\"file\"",
-                "name=\"name\"",
-                "my-uploaded-track",
+                "name=\"extract_composition_plan\"",
                 "FAKEAUDIO",
             ],
+            // Dropped in v0.2 — these fields don't exist in the SDK.
+            forbidden_tokens: vec!["name=\"name\"", "name=\"composition_plan\""],
             response: ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "song_id": "song_123",
             })),
@@ -83,8 +96,7 @@ async fn music_upload_sends_multipart_with_file_and_name() {
             "music",
             "upload",
             in_path.to_str().unwrap(),
-            "--name",
-            "my-uploaded-track",
+            "--extract-composition-plan",
         ])
         .output()
         .unwrap();
@@ -99,19 +111,23 @@ async fn music_upload_sends_multipart_with_file_and_name() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn music_video_to_music_sends_multipart_with_video_and_hints() {
+async fn music_video_to_music_sends_multipart_with_videos_part_and_hints() {
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/music/video-to-music"))
         .respond_with(AssertMultipartContains {
+            // Part name must be `videos` per the SDK. Tags are repeated
+            // under the same form field name.
             expected_tokens: vec![
-                "name=\"file\"",
+                "name=\"videos\"",
                 "name=\"description\"",
                 "tense thriller",
                 "name=\"tags\"",
                 "cinematic",
                 "FAKEVIDEO",
             ],
+            // `model_id` was removed — this endpoint doesn't accept it.
+            forbidden_tokens: vec!["name=\"model_id\""],
             response: ResponseTemplate::new(200).set_body_bytes(b"SCORE".to_vec()),
         })
         .mount(&mock)

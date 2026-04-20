@@ -130,18 +130,22 @@ pub fn set(ctx: Ctx, key: &str, value: &str) -> Result<(), AppError> {
         }
         "defaults.output_dir" | "output_dir" => cfg.defaults.output_dir = Some(value.to_string()),
         "update.enabled" => {
-            cfg.update.enabled = value
-                .parse()
-                .map_err(|_| AppError::InvalidInput(format!("expected bool, got '{value}'")))?;
+            cfg.update.enabled = value.parse().map_err(|_| AppError::InvalidInput {
+                msg: format!("expected bool, got '{value}'"),
+                suggestion: None,
+            })?;
         }
         "update.owner" => cfg.update.owner = value.to_string(),
         "update.repo" => cfg.update.repo = value.to_string(),
         other => {
-            return Err(AppError::InvalidInput(format!(
-                "unknown config key: '{other}'. Known: api_key, defaults.voice_id, \
+            return Err(AppError::InvalidInput {
+                msg: format!(
+                    "unknown config key: '{other}'. Known: api_key, defaults.voice_id, \
                  defaults.model_id, defaults.output_format, defaults.output_dir, \
                  update.enabled, update.owner, update.repo"
-            )));
+                ),
+                suggestion: None,
+            });
         }
     }
 
@@ -205,12 +209,11 @@ pub async fn check(ctx: Ctx, cfg: &AppConfig) -> Result<(), AppError> {
 // ── init ───────────────────────────────────────────────────────────────────
 
 pub fn init(ctx: Ctx, api_key: Option<String>) -> Result<(), AppError> {
-    let api_key = api_key.ok_or_else(|| {
-        AppError::InvalidInput(
-            "pass --api-key <sk_...> (this CLI is non-interactive; agents \
+    let api_key = api_key.ok_or_else(|| AppError::InvalidInput {
+        msg: "pass --api-key <sk_...> (this CLI is non-interactive; agents \
              and scripts should always provide the key as a flag)"
-                .into(),
-        )
+            .into(),
+        suggestion: None,
     })?;
     let api_key = api_key.trim().to_string();
 

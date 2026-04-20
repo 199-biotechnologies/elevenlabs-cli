@@ -20,10 +20,10 @@ pub async fn run(
 ) -> Result<(), AppError> {
     let path = Path::new(&file);
     if !path.exists() {
-        return Err(AppError::InvalidInput(format!(
-            "dictionary file does not exist: {}",
-            path.display()
-        )));
+        return Err(AppError::InvalidInput {
+            msg: format!("dictionary file does not exist: {}", path.display()),
+            suggestion: None,
+        });
     }
     let bytes = crate::commands::read_file_bytes(path).await?;
     let filename = path

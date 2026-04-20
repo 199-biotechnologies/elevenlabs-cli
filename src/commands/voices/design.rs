@@ -24,14 +24,18 @@ pub struct DesignArgs {
 
 pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: DesignArgs) -> Result<(), AppError> {
     if args.description.trim().is_empty() {
-        return Err(AppError::InvalidInput("description is required".into()));
+        return Err(AppError::InvalidInput {
+            msg: "description is required".into(),
+            suggestion: None,
+        });
     }
     if let Some(t) = &args.text {
         let len = t.chars().count();
         if !(100..=1000).contains(&len) {
-            return Err(AppError::InvalidInput(
-                "--text must be 100 to 1000 characters".into(),
-            ));
+            return Err(AppError::InvalidInput {
+                msg: "--text must be 100 to 1000 characters".into(),
+                suggestion: None,
+            });
         }
     }
 

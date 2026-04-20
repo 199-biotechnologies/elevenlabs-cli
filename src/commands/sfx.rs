@@ -20,13 +20,17 @@ struct SfxResult {
 
 pub async fn run(ctx: Ctx, args: SfxArgs) -> Result<(), AppError> {
     if args.text.trim().is_empty() {
-        return Err(AppError::InvalidInput("text is empty".into()));
+        return Err(AppError::InvalidInput {
+            msg: "text is empty".into(),
+            suggestion: None,
+        });
     }
     if let Some(d) = args.duration {
         if !(0.5..=30.0).contains(&d) {
-            return Err(AppError::InvalidInput(
-                "duration must be between 0.5 and 30 seconds".into(),
-            ));
+            return Err(AppError::InvalidInput {
+                msg: "duration must be between 0.5 and 30 seconds".into(),
+                suggestion: None,
+            });
         }
     }
 

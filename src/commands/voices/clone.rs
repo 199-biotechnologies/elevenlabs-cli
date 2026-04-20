@@ -15,9 +15,10 @@ pub async fn run(
     description: Option<String>,
 ) -> Result<(), AppError> {
     if files.is_empty() {
-        return Err(AppError::InvalidInput(
-            "at least one sample file required".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "at least one sample file required".into(),
+            suggestion: None,
+        });
     }
     let mut form = reqwest::multipart::Form::new().text("name", name.clone());
     if let Some(d) = description.clone() {
@@ -27,10 +28,10 @@ pub async fn run(
     for f in &files {
         let path = Path::new(f);
         if !path.exists() {
-            return Err(AppError::InvalidInput(format!(
-                "file does not exist: {}",
-                path.display()
-            )));
+            return Err(AppError::InvalidInput {
+                msg: format!("file does not exist: {}", path.display()),
+                suggestion: None,
+            });
         }
         let bytes = crate::commands::read_file_bytes(path).await?;
         let filename = path

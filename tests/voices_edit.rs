@@ -61,15 +61,6 @@ async fn edit_renames_voice_via_multipart() {
 #[tokio::test(flavor = "multi_thread")]
 async fn edit_serialises_labels_as_json_object_form_field() {
     let mock = MockServer::start().await;
-    // GET is needed because we omit --name and the edit endpoint requires it.
-    Mock::given(method("GET"))
-        .and(path("/v1/voices/v_abc"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "voice_id": "v_abc",
-            "name": "Existing Name"
-        })))
-        .mount(&mock)
-        .await;
     Mock::given(method("POST"))
         .and(path("/v1/voices/v_abc/edit"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -102,122 +93,11 @@ async fn edit_serialises_labels_as_json_object_form_field() {
     );
 
     let reqs = mock.received_requests().await.unwrap();
-    // GET (name lookup) + POST (edit).
-    assert_eq!(reqs.len(), 2);
-    let post_body = reqs
-        .iter()
-        .find(|r| r.method.as_str().eq_ignore_ascii_case("POST"))
-        .expect("POST request not found");
-    let multipart = String::from_utf8_lossy(&post_body.body);
+    assert_eq!(reqs.len(), 1);
+    let multipart = String::from_utf8_lossy(&reqs[0].body);
     assert!(multipart.contains("name=\"labels\""));
     assert!(multipart.contains("\"accent\":\"british\""));
     assert!(multipart.contains("\"gender\":\"female\""));
-    // The fetched name is carried through into the form.
-    assert!(multipart.contains("Existing Name"));
-}
-
-/// When the user omits `--name`, we pre-fetch the current voice and forward
-/// its existing name into the multipart form so the server-side requirement
-/// is satisfied. A description-only edit would otherwise 422.
-#[tokio::test(flavor = "multi_thread")]
-async fn edit_fetches_current_name_when_not_provided() {
-    let mock = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/voices/v_nm"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "voice_id": "v_nm",
-            "name": "Fetched Name",
-            "description": "old"
-        })))
-        .mount(&mock)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/v1/voices/v_nm/edit"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "status": "ok",
-            "voice_id": "v_nm",
-            "name": "Fetched Name"
-        })))
-        .mount(&mock)
-        .await;
-
-    let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
-    let out = bin()
-        .env("ELEVENLABS_CLI_CONFIG", &cfg)
-        .env("ELEVENLABS_API_BASE_URL", mock.uri())
-        .env_remove("ELEVENLABS_API_KEY")
-        .args([
-            "voices",
-            "edit",
-            "v_nm",
-            "--description",
-            "only description changes",
-        ])
-        .output()
-        .unwrap();
-
-    assert!(
-        out.status.success(),
-        "expected success; stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-
-    let reqs = mock.received_requests().await.unwrap();
-    assert_eq!(reqs.len(), 2, "expected GET then POST");
-
-    let post_body = reqs
-        .iter()
-        .find(|r| r.method.as_str().eq_ignore_ascii_case("POST"))
-        .expect("POST request not found");
-    let multipart = String::from_utf8_lossy(&post_body.body);
-    assert!(
-        multipart.contains("name=\"name\""),
-        "multipart must include a `name` field"
-    );
-    assert!(
-        multipart.contains("Fetched Name"),
-        "fetched name must be forwarded into the edit form; got: {multipart}"
-    );
-    assert!(
-        multipart.contains("name=\"description\""),
-        "multipart must include the new description"
-    );
-}
-
-/// When the pre-fetch fails (auth/404/network), we surface an actionable
-/// `InvalidInput` telling the user to pass `--name` explicitly.
-#[tokio::test(flavor = "multi_thread")]
-async fn edit_surfaces_fetch_failure_as_invalid_input() {
-    let mock = MockServer::start().await;
-    Mock::given(method("GET"))
-        .and(path("/v1/voices/v_bad"))
-        .respond_with(ResponseTemplate::new(404).set_body_json(serde_json::json!({
-            "detail": "voice not found"
-        })))
-        .mount(&mock)
-        .await;
-
-    let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
-    let out = bin()
-        .env("ELEVENLABS_CLI_CONFIG", &cfg)
-        .env("ELEVENLABS_API_BASE_URL", mock.uri())
-        .env_remove("ELEVENLABS_API_KEY")
-        .args(["voices", "edit", "v_bad", "--description", "only desc"])
-        .output()
-        .unwrap();
-
-    assert_eq!(
-        out.status.code(),
-        Some(3),
-        "fetch failure when --name is absent must surface as invalid_input (exit 3); \
-         stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let err_txt = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err_txt.contains("--name"),
-        "error must point the user at --name; got: {err_txt}"
-    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -1,5 +1,10 @@
 //! HTTP routing + body shape contract for `elevenlabs phone whatsapp …`
 //! (call, message, and the accounts CRUD surface).
+//!
+//! Body shapes are grounded against
+//! https://github.com/elevenlabs/elevenlabs-python/blob/main/src/elevenlabs/conversational_ai/whatsapp/raw_client.py
+//! — if these tests fail, diff against that file to see what the SDK
+//! actually sends.
 
 use assert_cmd::Command as AssertCmd;
 use std::io::Write;
@@ -37,7 +42,7 @@ impl Respond for Recorder {
 // ── whatsapp call ──────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
-async fn whatsapp_call_posts_outbound_call() {
+async fn whatsapp_call_posts_outbound_call_with_permission_template() {
     let mock = MockServer::start().await;
     let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
     Mock::given(method("POST"))
@@ -62,11 +67,15 @@ async fn whatsapp_call_posts_outbound_call() {
             "whatsapp",
             "call",
             "--agent",
-            "a1",
-            "--whatsapp-account",
-            "wa1",
-            "--recipient",
-            "+14155550001",
+            "agent_1",
+            "--whatsapp-phone-number",
+            "wa_phone_1",
+            "--whatsapp-user",
+            "wa_user_1",
+            "--permission-template",
+            "call_consent_v1",
+            "--permission-template-language",
+            "en_US",
         ])
         .output()
         .unwrap();
@@ -76,15 +85,25 @@ async fn whatsapp_call_posts_outbound_call() {
         String::from_utf8_lossy(&out.stderr)
     );
     let body = captured.lock().unwrap().clone().expect("no body captured");
-    assert_eq!(body["agent_id"], "a1");
-    assert_eq!(body["whatsapp_account_id"], "wa1");
-    assert_eq!(body["recipient_phone_number"], "+14155550001");
+    assert_eq!(body["agent_id"], "agent_1");
+    assert_eq!(body["whatsapp_phone_number_id"], "wa_phone_1");
+    assert_eq!(body["whatsapp_user_id"], "wa_user_1");
+    assert_eq!(
+        body["whatsapp_call_permission_request_template_name"],
+        "call_consent_v1"
+    );
+    assert_eq!(
+        body["whatsapp_call_permission_request_template_language_code"],
+        "en_US"
+    );
+    assert!(body.get("whatsapp_account_id").is_none());
+    assert!(body.get("recipient_phone_number").is_none());
 }
 
-// ── whatsapp message (text) ────────────────────────────────────────────────
+// ── whatsapp message (template only — no free-form text) ───────────────────
 
 #[tokio::test(flavor = "multi_thread")]
-async fn whatsapp_message_text_body_shape() {
+async fn whatsapp_message_template_body_shape() {
     let mock = MockServer::start().await;
     let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
     Mock::given(method("POST"))
@@ -109,30 +128,59 @@ async fn whatsapp_message_text_body_shape() {
             "whatsapp",
             "message",
             "--agent",
-            "a1",
-            "--whatsapp-account",
-            "wa1",
-            "--recipient",
-            "+14155550002",
-            "--text",
-            "Hello there",
+            "agent_1",
+            "--whatsapp-phone-number",
+            "wa_phone_1",
+            "--whatsapp-user",
+            "wa_user_1",
+            "--template",
+            "welcome_en",
+            "--template-language",
+            "en_US",
+            "--template-param",
+            "name=Alice",
+            "--template-param",
+            "code=1234",
         ])
         .output()
         .unwrap();
     assert!(
         out.status.success(),
-        "whatsapp message failed; stderr={}",
+        "whatsapp message (template) failed; stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
     let body = captured.lock().unwrap().clone().expect("no body captured");
-    assert_eq!(body["text"], "Hello there");
-    assert!(body.get("template_name").is_none());
+    assert_eq!(body["agent_id"], "agent_1");
+    assert_eq!(body["whatsapp_phone_number_id"], "wa_phone_1");
+    assert_eq!(body["whatsapp_user_id"], "wa_user_1");
+    assert_eq!(body["template_name"], "welcome_en");
+    assert_eq!(body["template_language_code"], "en_US");
+
+    let params = body["template_params"]
+        .as_array()
+        .expect("template_params is an array");
+    assert_eq!(params.len(), 1);
+    assert_eq!(params[0]["type"], "body");
+    let inner = params[0]["parameters"]
+        .as_array()
+        .expect("parameters is an array");
+    assert_eq!(inner.len(), 2);
+    assert_eq!(inner[0]["parameter_name"], "name");
+    assert_eq!(inner[0]["type"], "text");
+    assert_eq!(inner[0]["text"], "Alice");
+    assert_eq!(inner[1]["parameter_name"], "code");
+    assert_eq!(inner[1]["text"], "1234");
+
+    assert!(body.get("text").is_none());
+    assert!(body.get("whatsapp_account_id").is_none());
+    assert!(body.get("recipient_phone_number").is_none());
+    assert!(body.get("conversation_initiation_client_data").is_none());
 }
 
-// ── whatsapp message (template) ────────────────────────────────────────────
+// ── whatsapp message with --client-data pass-through ───────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
-async fn whatsapp_message_template_body_shape() {
+async fn whatsapp_message_with_client_data_file_passes_through() {
     let mock = MockServer::start().await;
     let captured: Arc<Mutex<Option<serde_json::Value>>> = Arc::new(Mutex::new(None));
     Mock::given(method("POST"))
@@ -140,12 +188,20 @@ async fn whatsapp_message_template_body_shape() {
         .respond_with(Recorder {
             body: captured.clone(),
             response: ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "message_id": "m_2",
+                "message_id": "m_cd",
                 "status": "queued",
             })),
         })
         .mount(&mock)
         .await;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let cd = tmp.path().join("client_data.json");
+    std::fs::write(
+        &cd,
+        r#"{"dynamic_variables":{"first_name":"Alice"},"source":"cli"}"#,
+    )
+    .unwrap();
 
     let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
     let out = bin()
@@ -157,28 +213,37 @@ async fn whatsapp_message_template_body_shape() {
             "whatsapp",
             "message",
             "--agent",
-            "a1",
-            "--whatsapp-account",
-            "wa1",
-            "--recipient",
-            "+14155550003",
+            "agent_1",
+            "--whatsapp-phone-number",
+            "wa_phone_1",
+            "--whatsapp-user",
+            "wa_user_1",
             "--template",
             "welcome_en",
+            "--template-language",
+            "en_US",
+            "--client-data",
+            cd.to_str().unwrap(),
         ])
         .output()
         .unwrap();
     assert!(
         out.status.success(),
-        "whatsapp message (template) failed; stderr={}",
+        "whatsapp message with client-data failed; stderr={}",
         String::from_utf8_lossy(&out.stderr)
     );
     let body = captured.lock().unwrap().clone().expect("no body captured");
-    assert_eq!(body["template_name"], "welcome_en");
-    assert!(body.get("text").is_none());
+    assert_eq!(
+        body["conversation_initiation_client_data"]["dynamic_variables"]["first_name"],
+        "Alice"
+    );
+    assert_eq!(body["conversation_initiation_client_data"]["source"], "cli");
 }
 
+// ── whatsapp message rejects bad template-param shape ──────────────────────
+
 #[tokio::test(flavor = "multi_thread")]
-async fn whatsapp_message_without_text_or_template_is_invalid_input() {
+async fn whatsapp_message_rejects_bad_template_param() {
     let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
     let out = bin()
         .env("ELEVENLABS_CLI_CONFIG", &cfg)
@@ -190,10 +255,16 @@ async fn whatsapp_message_without_text_or_template_is_invalid_input() {
             "message",
             "--agent",
             "a",
-            "--whatsapp-account",
-            "wa",
-            "--recipient",
-            "+14155550000",
+            "--whatsapp-phone-number",
+            "p",
+            "--whatsapp-user",
+            "u",
+            "--template",
+            "t",
+            "--template-language",
+            "en_US",
+            "--template-param",
+            "no_equals_sign",
         ])
         .output()
         .unwrap();
@@ -204,7 +275,7 @@ async fn whatsapp_message_without_text_or_template_is_invalid_input() {
     );
 }
 
-// ── accounts CRUD ──────────────────────────────────────────────────────────
+// ── accounts CRUD (unchanged from pre-fix; kept to pin regressions) ────────
 
 #[tokio::test(flavor = "multi_thread")]
 async fn whatsapp_accounts_list_hits_endpoint() {

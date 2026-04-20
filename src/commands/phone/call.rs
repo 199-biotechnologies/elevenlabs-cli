@@ -39,14 +39,16 @@ pub async fn run(
         "twilio" => "/v1/convai/twilio/outbound-call",
         "sip_trunk" => "/v1/convai/sip-trunk/outbound-call",
         "" => {
-            return Err(AppError::InvalidInput(format!(
-                "phone number {from_id} not found in your account"
-            )));
+            return Err(AppError::InvalidInput {
+                msg: format!("phone number {from_id} not found in your account"),
+                suggestion: None,
+            });
         }
         other => {
-            return Err(AppError::InvalidInput(format!(
-                "unsupported phone provider: {other}"
-            )));
+            return Err(AppError::InvalidInput {
+                msg: format!("unsupported phone provider: {other}"),
+                suggestion: None,
+            });
         }
     };
 

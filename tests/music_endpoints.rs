@@ -1,14 +1,15 @@
 //! Wiremock regressions pinning the new v0.2 music endpoints to their
 //! exact HTTP paths. If any of these routes silently drift (e.g. the
 //! server adds a trailing slash, or the CLI uses `/v1/music/detail`
-//! instead of `/detailed`), wiremock returns 404 and the assertion fails.
+//! instead of `/detailed`), wiremock returns 404 and the assertion
+//! fails.
 //!
-//! Also verifies the happy-path JSON envelope shape so downstream agents
-//! can rely on the contract.
+//! Response shapes are deliberately minimal — just enough to exercise
+//! the HTTP contract. The shape-level invariants live in the dedicated
+//! `music_multipart.rs` / `music_detailed_split.rs` suites.
 
 use assert_cmd::Command as AssertCmd;
-use base64::Engine as _;
-use std::io::Write;
+use std::io::{Cursor, Write};
 use std::path::PathBuf;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -25,23 +26,66 @@ fn temp_config_with_key(api_key: &str) -> (tempfile::TempDir, PathBuf) {
     (dir, cfg)
 }
 
-fn b64(bytes: &[u8]) -> String {
-    base64::engine::general_purpose::STANDARD.encode(bytes)
+/// Build a minimal multipart/mixed body with JSON metadata + audio.
+/// Shared between this suite and `music_detailed_split.rs`.
+fn build_multipart_mixed(boundary: &str, json_bytes: &[u8], audio_bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    out.extend_from_slice(b"Content-Type: application/json\r\n\r\n");
+    out.extend_from_slice(json_bytes);
+    out.extend_from_slice(b"\r\n");
+    out.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    out.extend_from_slice(b"Content-Type: audio/mpeg\r\n\r\n");
+    out.extend_from_slice(audio_bytes);
+    out.extend_from_slice(b"\r\n");
+    out.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    out
+}
+
+/// Build a minimal zip archive in memory containing the named entries.
+/// Used to fake the stem-separation response.
+fn build_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut buf = Cursor::new(Vec::<u8>::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut buf);
+        let opts: zip::write::FileOptions<'_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (name, bytes) in entries {
+            zip.start_file(*name, opts).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    buf.into_inner()
 }
 
 // ── music detailed ─────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
 async fn music_detailed_uses_v1_music_detailed() {
+    let metadata = serde_json::json!({
+        "bpm": 120,
+        "time_signature": "4/4",
+        "sections": [{"name": "intro", "duration_ms": 2000}],
+    });
+    let boundary = "endpoint-test-boundary";
+    let body = build_multipart_mixed(
+        boundary,
+        serde_json::to_vec(&metadata).unwrap().as_slice(),
+        b"FAKEDETAILED",
+    );
+
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/music/detailed"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "audio_base64": b64(b"FAKEDETAILED"),
-            "bpm": 120,
-            "time_signature": "4/4",
-            "sections": [{"name": "intro", "duration_ms": 2000}],
-        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header(
+                    "content-type",
+                    format!("multipart/mixed; boundary={boundary}").as_str(),
+                )
+                .set_body_bytes(body),
+        )
         .mount(&mock)
         .await;
 
@@ -137,13 +181,7 @@ async fn music_upload_uses_v1_music_upload() {
         .env("ELEVENLABS_CLI_CONFIG", &cfg)
         .env("ELEVENLABS_API_BASE_URL", mock.uri())
         .env_remove("ELEVENLABS_API_KEY")
-        .args([
-            "music",
-            "upload",
-            in_path.to_str().unwrap(),
-            "--name",
-            "my-track",
-        ])
+        .args(["music", "upload", in_path.to_str().unwrap()])
         .output()
         .unwrap();
 
@@ -159,21 +197,27 @@ async fn music_upload_uses_v1_music_upload() {
 // ── music stem-separation ──────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
-async fn music_stem_separation_uses_correct_path() {
+async fn music_stem_separation_uses_correct_path_and_unzips() {
+    // Real endpoint returns a ZIP archive; fabricate one with two stems.
+    let zip = build_zip(&[("vocals.mp3", b"VOCALS"), ("drums.mp3", b"DRUMS")]);
+
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/music/stem-separation"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "stems": {
-                "vocals": b64(b"VOCALSWAV"),
-                "drums": b64(b"DRUMSWAV"),
-            }
-        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "application/zip")
+                .set_body_bytes(zip),
+        )
         .mount(&mock)
         .await;
 
     let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
+    let tmp_in = tempfile::tempdir().unwrap();
+    let in_path = tmp_in.path().join("source.mp3");
+    std::fs::write(&in_path, b"FAKEAUDIO").unwrap();
     let tmp_out = tempfile::tempdir().unwrap();
+
     let out = bin()
         .env("ELEVENLABS_CLI_CONFIG", &cfg)
         .env("ELEVENLABS_API_BASE_URL", mock.uri())
@@ -181,7 +225,7 @@ async fn music_stem_separation_uses_correct_path() {
         .args([
             "music",
             "stem-separation",
-            "song_abc123",
+            in_path.to_str().unwrap(),
             "--output-dir",
             tmp_out.path().to_str().unwrap(),
         ])
@@ -199,6 +243,10 @@ async fn music_stem_separation_uses_correct_path() {
     assert_eq!(stems.len(), 2);
     assert!(tmp_out.path().join("vocals.mp3").exists());
     assert!(tmp_out.path().join("drums.mp3").exists());
+    assert_eq!(
+        std::fs::read(tmp_out.path().join("vocals.mp3")).unwrap(),
+        b"VOCALS"
+    );
 }
 
 // ── music video-to-music ───────────────────────────────────────────────────

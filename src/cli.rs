@@ -1057,33 +1057,34 @@ pub struct UploadArgs {
     /// Local audio file to upload
     pub file: String,
 
-    /// Friendly name for the song
-    #[arg(long)]
-    pub name: Option<String>,
-
-    /// Path to a composition-plan JSON file to attach
-    #[arg(long, value_name = "PATH")]
-    pub composition_plan: Option<String>,
+    /// Generate and return the composition plan for the uploaded song.
+    /// Increases latency; the returned plan can be piped into
+    /// `music compose --composition-plan <file>`.
+    #[arg(long = "extract-composition-plan")]
+    pub extract_composition_plan: bool,
 }
 
 #[derive(clap::Args, Debug, Clone)]
 pub struct StemSeparationArgs {
-    /// Either a local audio file path or a song_id from `music upload`
-    #[arg(value_name = "SONG_ID_OR_FILE")]
-    pub source: String,
+    /// Local audio file to split into stems.
+    #[arg(value_name = "FILE")]
+    pub file: String,
 
     /// Directory to write the stem files into. Defaults to ./stems_<timestamp>.
     #[arg(long, value_name = "DIR")]
     pub output_dir: Option<String>,
 
-    /// Stems to extract. Repeatable. Default set: vocals, drums, bass, other.
-    #[arg(long = "stems", value_name = "STEM", default_values_t = vec![
-        "vocals".to_string(),
-        "drums".to_string(),
-        "bass".to_string(),
-        "other".to_string(),
-    ])]
-    pub stems: Vec<String>,
+    /// Output audio format (codec_samplerate_bitrate, e.g. mp3_44100_128).
+    #[arg(long = "output-format", value_name = "FORMAT")]
+    pub output_format: Option<String>,
+
+    /// Server-side stem variation id (opaque; see ElevenLabs docs).
+    #[arg(long = "stem-variation-id", value_name = "ID")]
+    pub stem_variation_id: Option<String>,
+
+    /// Sign each generated mp3 with C2PA.
+    #[arg(long = "sign-with-c2pa")]
+    pub sign_with_c2pa: bool,
 }
 
 #[derive(clap::Args, Debug, Clone)]
@@ -1099,10 +1100,6 @@ pub struct VideoToMusicArgs {
     #[arg(long = "tag", value_name = "TAG")]
     pub tags: Vec<String>,
 
-    /// Model ID override
-    #[arg(long)]
-    pub model: Option<String>,
-
     /// Output audio format (default mp3_44100_128)
     #[arg(long)]
     pub format: Option<String>,
@@ -1110,6 +1107,10 @@ pub struct VideoToMusicArgs {
     /// Output audio file path
     #[arg(short, long)]
     pub output: Option<String>,
+
+    /// Sign the output with C2PA.
+    #[arg(long = "sign-with-c2pa")]
+    pub sign_with_c2pa: bool,
 }
 
 // ── User ───────────────────────────────────────────────────────────────────
@@ -1193,11 +1194,17 @@ pub enum AgentsAction {
         name: Option<String>,
     },
 
-    /// Delete an agent
+    /// Delete an agent (irreversible — cascades to conversations, attached KB
+    /// entries, and tool-dep edges)
     #[command(visible_alias = "rm")]
     Delete {
         /// Agent ID
         agent_id: String,
+
+        /// Confirm deletion. Required because agent deletion is irreversible
+        /// server-side.
+        #[arg(long)]
+        yes: bool,
     },
 
     /// Add a knowledge base document and attach it to an agent
@@ -1422,42 +1429,64 @@ pub enum PhoneBatchAction {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum PhoneWhatsappAction {
-    /// Place an outbound WhatsApp voice call
+    /// Place an outbound WhatsApp voice call.
+    ///
+    /// WhatsApp requires a pre-approved call-permission-request template.
     Call {
         /// Agent ID to handle the call
         #[arg(long = "agent")]
         agent_id: String,
 
-        /// WhatsApp account ID to call from
-        #[arg(long = "whatsapp-account")]
-        whatsapp_account: String,
+        /// WhatsApp phone number ID to call from (sending business number)
+        #[arg(long = "whatsapp-phone-number")]
+        whatsapp_phone_number_id: String,
 
-        /// Recipient phone number in E.164 format (+1...)
-        #[arg(long)]
-        recipient: String,
+        /// WhatsApp user ID of the recipient
+        #[arg(long = "whatsapp-user")]
+        whatsapp_user_id: String,
+
+        /// Name of the pre-approved WhatsApp call-permission-request template
+        #[arg(long = "permission-template")]
+        permission_template_name: String,
+
+        /// Language code for the permission template (e.g. en_US)
+        #[arg(long = "permission-template-language")]
+        permission_template_language_code: String,
     },
 
-    /// Send an outbound WhatsApp message (free-form text OR a pre-approved template)
+    /// Send an outbound WhatsApp message via a pre-approved template.
+    ///
+    /// WhatsApp rejects free-form text — every outbound message must use
+    /// a pre-approved template. Repeat --template-param to fill body vars.
     Message {
         /// Agent ID associated with the message
         #[arg(long = "agent")]
         agent_id: String,
 
-        /// WhatsApp account ID to send from
-        #[arg(long = "whatsapp-account")]
-        whatsapp_account: String,
+        /// WhatsApp phone number ID to send from (sending business number)
+        #[arg(long = "whatsapp-phone-number")]
+        whatsapp_phone_number_id: String,
 
-        /// Recipient phone number in E.164 format (+1...)
-        #[arg(long)]
-        recipient: String,
+        /// WhatsApp user ID of the recipient
+        #[arg(long = "whatsapp-user")]
+        whatsapp_user_id: String,
 
-        /// Free-form message text (mutually exclusive with --template)
-        #[arg(long, conflicts_with = "template")]
-        text: Option<String>,
+        /// Pre-approved WhatsApp template name
+        #[arg(long = "template")]
+        template_name: String,
 
-        /// Pre-approved WhatsApp template name (mutually exclusive with --text)
-        #[arg(long)]
-        template: Option<String>,
+        /// Language code for the template (e.g. en_US)
+        #[arg(long = "template-language")]
+        template_language_code: String,
+
+        /// Template body parameter as key=value. Repeatable.
+        #[arg(long = "template-param", value_name = "KEY=VALUE")]
+        template_params: Vec<String>,
+
+        /// Path to a JSON file whose contents become
+        /// `conversation_initiation_client_data`.
+        #[arg(long = "client-data")]
+        client_data: Option<String>,
     },
 
     /// Manage WhatsApp accounts

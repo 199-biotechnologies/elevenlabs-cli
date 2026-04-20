@@ -27,9 +27,10 @@ pub async fn run(
         "webvtt" => "vtt",
         "json" => "json",
         other => {
-            return Err(AppError::InvalidInput(format!(
-                "invalid --format '{other}'; expected one of: srt, webvtt, json"
-            )));
+            return Err(AppError::InvalidInput {
+                msg: format!("invalid --format '{other}'; expected one of: srt, webvtt, json"),
+                suggestion: None,
+            });
         }
     };
 

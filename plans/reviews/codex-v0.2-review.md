@@ -1,0 +1,34 @@
+v0.2.0 review for commit `3826d93`
+
+Compared the new endpoint calls against `elevenlabs-python` and spot-checked `elevenlabs-js` on the highest-risk surfaces (`music`, `text-to-dialogue`, `whatsapp`). Findings are ordered by severity.
+
+- **P0** `src/commands/music/detailed.rs:41` / `src/commands/music/detailed.rs:48` treat `POST /v1/music/detailed` as JSON with `audio_base64`. Both SDKs model this endpoint as a **streaming `multipart/mixed` response**: JSON metadata + binary audio, not a JSON envelope. Current code will fail to parse or silently mis-handle valid responses. **Fix:** switch to streaming response handling, parse the multipart boundary, write the audio part as bytes, and persist the JSON metadata part separately.
+
+- **P0** `src/commands/music/stem.rs:39`, `src/commands/music/stem.rs:59`, `src/commands/music/stem.rs:61`, `src/commands/music/stem.rs:65`, `src/commands/music/stem.rs:69` do not match the official stem-separation API. SDKs require multipart `file`, optional query `output_format`, and optional form fields `stem_variation_id` / `sign_with_c2pa`; they return a **streaming ZIP archive**, not JSON/base64 stems. Current support for `song_id`, repeated `stems`, and JSON decoding is off-contract. **Fix:** require a file input, add `output_format` query support, send only official fields, and save/unpack the ZIP response.
+
+- **P0** `src/commands/phone/whatsapp/message.rs:33` sends `{agent_id, whatsapp_account_id, recipient_phone_number, text|template_name}` to `POST /v1/convai/whatsapp/outbound-message`. Python and JS both require `{whatsapp_phone_number_id, whatsapp_user_id, template_name, template_language_code, template_params, agent_id, ...}` and do **not** expose free-form `text`. **Fix:** remodel the CLI around template sends only, with the official WhatsApp identifiers and template language/params.
+
+- **P1** `src/commands/phone/whatsapp/call.rs:14` sends `{agent_id, whatsapp_account_id, recipient_phone_number}` to `POST /v1/convai/whatsapp/outbound-call`. Both SDKs require `{whatsapp_phone_number_id, whatsapp_user_id, whatsapp_call_permission_request_template_name, whatsapp_call_permission_request_template_language_code, agent_id, ...}`. **Fix:** change the CLI/body to the SDK contract; the current body is likely a 422 on a strict server.
+
+- **P1** `src/commands/dialogue.rs:120`, `src/commands/dialogue.rs:192`, `src/commands/dialogue.rs:437` mis-handle `POST /v1/text-to-dialogue/stream/with-timestamps`. Python iterates line-delimited JSON chunks; JS models it as a streamed JSON event stream. Current code calls `post_json_with_query` once and expects one JSON object with `audio_base64` or `chunks[]`. **Fix:** add a dedicated streamed parser for `--stream --with-timestamps` that reads newline-delimited JSON chunks and concatenates decoded audio.
+
+- **P1** `src/commands/music/upload.rs:35` / `src/commands/music/upload.rs:39` send unsupported multipart fields `name` and `composition_plan` to `POST /v1/music/upload`. The SDK contract is `file` plus optional `extract_composition_plan`; nothing else. **Fix:** replace the current options with `--extract-composition-plan` and stop advertising `song_id` extraction from a body shape you do not control.
+
+- **P1** `src/commands/music/video.rs:40` / `src/commands/music/video.rs:47` use multipart field `file` and optional `model_id` for `POST /v1/music/video-to-music`. SDKs require repeated multipart field `videos`, optional `description`, repeated `tags`, optional `sign_with_c2pa`, and `output_format` query. **Fix:** rename the part to `videos`, support repeated video inputs if desired, drop `model_id`, and add `sign_with_c2pa`.
+
+- **P1** `src/commands/phone/batch/submit.rs:41` uses `name` in the submit body; the Python SDK requires `call_name` for `POST /v1/convai/batch-calling/submit`. `src/commands/phone/batch/list.rs:15` also uses non-SDK query params `page_size`, `cursor`, `status`, `agent_id`; the SDK exposes `limit` and `last_doc`. **Fix:** rename `name -> call_name`, map list pagination to `limit` / `last_doc`, and only expose extra filters if the backend is documented to accept them.
+
+- **P1** `src/commands/voices/edit.rs:68` / `src/commands/voices/edit.rs:108` omit `name` when editing a voice. The official `voices.update` signature in `elevenlabs-python` requires `name: str` for `POST /v1/voices/{voice_id}/edit`. Description-only / labels-only / add-sample-only edits can therefore fail server-side. **Fix:** fetch the current voice name first or require `--name` whenever posting to `/edit`.
+
+- **P1** `src/commands/doctor.rs:231` reports “config wins; env is fallback only”. That matches current `src/config.rs:175` and `tests/config_precedence.rs:1`, but it directly violates the repo’s AGENTS invariant (`CLI flags > env vars > config file > defaults`). **Fix:** decide which contract is authoritative, then make `doctor`, `config`, tests, and AGENTS agree. Right now contributors will get contradictory guidance.
+
+- **P2** `src/commands/dict/list.rs:17`, `src/commands/dict/update.rs:28`, and `src/commands/dict/set_rules.rs:22` drift from the SDK: list supports `cursor`, `page_size`, `sort`, `sort_direction` only; update supports `archived` and `name` only; set-rules accepts only `rules`. Current `search`, `description`, `case_sensitive`, and `word_boundaries` fields are not in the official clients. **Fix:** remove or gate these fields until the SDKs expose them.
+
+- **P2** `src/commands/align.rs:85` sends `enabled_spooled_file=true`, but the official forced-alignment clients only send multipart `{file, text}`. `src/commands/voices/similar.rs:58` likewise sends `gender/age/accent/language/use_case`, while the official similar-voices endpoint only accepts `audio_file`, `similarity_threshold`, and `top_k`. **Fix:** drop these extra fields unless there is a documented backend rollout you can point to.
+
+- **P2** `src/commands/agents/knowledge.rs:111` correctly preserves the existing `knowledge_base` array and appends the new doc before PATCH, so the P0 regression itself looks fixed. Two cautions remain: `src/commands/agents/knowledge.rs:126` sends a sparse `conversation_config` patch, which is only safe if the server deep-merges nested objects, and `src/commands/agents/knowledge.rs:56` still uses an unnecessary `unwrap()`. **Fix:** prefer patching the full existing `conversation_config` with only `knowledge_base` changed, and replace the `unwrap()` with structured matching.
+
+Checked OK:
+
+- `src/commands/dubbing/create.rs`, `list.rs`, `show.rs`, `delete.rs`, and `dubbing/resource/{transcribe,translate,dub,render,migrate}.rs` use the correct methods and paths; their request bodies are intentionally pass-through JSON where the SDK expects those shapes.
+- `src/commands/agents/knowledge.rs:43` / `:50` / `:74` use the correct KB document create endpoints: `/v1/convai/knowledge-base/url`, `/text`, and `/file`.

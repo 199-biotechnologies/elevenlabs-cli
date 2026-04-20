@@ -30,10 +30,10 @@ pub struct SimilarArgs {
 pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: SimilarArgs) -> Result<(), AppError> {
     let path = Path::new(&args.audio_file);
     if !path.exists() {
-        return Err(AppError::InvalidInput(format!(
-            "file does not exist: {}",
-            path.display()
-        )));
+        return Err(AppError::InvalidInput {
+            msg: format!("file does not exist: {}", path.display()),
+            suggestion: None,
+        });
     }
 
     let bytes = crate::commands::read_file_bytes(path).await?;

@@ -67,19 +67,11 @@ pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: EditArgs) -> Result<
         || args.remove_background_noise;
 
     let final_voice: serde_json::Value = if needs_edit_post {
-        // The /v1/voices/{id}/edit endpoint treats `name` as required.
-        // If the caller didn't pass one, pre-fetch the current voice's
-        // name so description/labels-only edits don't 422 server-side.
-        let resolved_name = match &args.name {
-            Some(n) => n.clone(),
-            None => fetch_voice_name(client, &args.voice_id).await?,
-        };
-
         let mut form = reqwest::multipart::Form::new();
 
-        // Always include name — the server requires it even for partial edits.
-        form = form.text("name", resolved_name);
-
+        if let Some(n) = &args.name {
+            form = form.text("name", n.clone());
+        }
         if let Some(d) = &args.description {
             form = form.text("description", d.clone());
         }
@@ -150,36 +142,6 @@ pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: EditArgs) -> Result<
         }
     });
     Ok(())
-}
-
-/// GET /v1/voices/{voice_id} and pluck the current `name`. Transforms any
-/// failure — auth, 404, network — into an actionable `InvalidInput` that
-/// points the user at `--name`, so there is a one-shot recovery even
-/// when their key lacks `voices_read` scope.
-async fn fetch_voice_name(client: &ElevenLabsClient, voice_id: &str) -> Result<String, AppError> {
-    let path = format!("/v1/voices/{voice_id}");
-    let v: serde_json::Value =
-        client
-            .get_json(&path)
-            .await
-            .map_err(|e| AppError::InvalidInput {
-                msg: format!(
-                    "could not read current voice name (required by the edit endpoint): {e}"
-                ),
-                suggestion: Some(format!(
-                    "pass the voice's current name explicitly: \
-                     elevenlabs voices edit {voice_id} --name \"<current name>\" …"
-                )),
-            })?;
-    v.get("name")
-        .and_then(|x| x.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| AppError::InvalidInput {
-            msg: format!("voice '{voice_id}' has no `name` field in its metadata"),
-            suggestion: Some(format!(
-                "pass --name explicitly: elevenlabs voices edit {voice_id} --name \"<name>\" …"
-            )),
-        })
 }
 
 /// Parse `--labels key=value` strings into a flat string→string map.

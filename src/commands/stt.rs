@@ -191,79 +191,91 @@ fn validate_args(args: &SttArgs) -> Result<(), AppError> {
     .count();
 
     if source_count == 0 {
-        return Err(AppError::InvalidInput(
-            "provide a file path, --from-url <https://...>, or --source-url <url>".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "provide a file path, --from-url <https://...>, or --source-url <url>".into(),
+            suggestion: None,
+        });
     }
     if source_count > 1 {
-        return Err(AppError::InvalidInput(
-            "pass only one of <FILE>, --from-url, --source-url".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "pass only one of <FILE>, --from-url, --source-url".into(),
+            suggestion: None,
+        });
     }
     if let Some(p) = &args.file {
         let path = Path::new(p);
         if !path.exists() {
-            return Err(AppError::InvalidInput(format!(
-                "file does not exist: {}",
-                path.display()
-            )));
+            return Err(AppError::InvalidInput {
+                msg: format!("file does not exist: {}", path.display()),
+                suggestion: None,
+            });
         }
     }
 
     if args.diarization_threshold.is_some() && !args.diarize {
-        return Err(AppError::InvalidInput(
-            "--diarization-threshold requires --diarize".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "--diarization-threshold requires --diarize".into(),
+            suggestion: None,
+        });
     }
     if args.diarization_threshold.is_some() && args.num_speakers.is_some() {
-        return Err(AppError::InvalidInput(
-            "--diarization-threshold cannot be combined with --num-speakers".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "--diarization-threshold cannot be combined with --num-speakers".into(),
+            suggestion: None,
+        });
     }
     if let Some(t) = args.diarization_threshold {
         if !(0.0..=1.0).contains(&t) {
-            return Err(AppError::InvalidInput(
-                "--diarization-threshold must be between 0.0 and 1.0".into(),
-            ));
+            return Err(AppError::InvalidInput {
+                msg: "--diarization-threshold must be between 0.0 and 1.0".into(),
+                suggestion: None,
+            });
         }
     }
     if let Some(t) = args.temperature {
         if !(0.0..=2.0).contains(&t) {
-            return Err(AppError::InvalidInput(
-                "--temperature must be between 0.0 and 2.0".into(),
-            ));
+            return Err(AppError::InvalidInput {
+                msg: "--temperature must be between 0.0 and 2.0".into(),
+                suggestion: None,
+            });
         }
     }
     if args.detect_speaker_roles && !args.diarize {
-        return Err(AppError::InvalidInput(
-            "--detect-speaker-roles requires --diarize".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "--detect-speaker-roles requires --diarize".into(),
+            suggestion: None,
+        });
     }
     if args.no_verbatim && args.model != "scribe_v2" {
-        return Err(AppError::InvalidInput(
-            "--no-verbatim is only supported by scribe_v2".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "--no-verbatim is only supported by scribe_v2".into(),
+            suggestion: None,
+        });
     }
     if args.keyterms.len() > 1000 {
-        return Err(AppError::InvalidInput(
-            "--keyterm may be specified at most 1000 times".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "--keyterm may be specified at most 1000 times".into(),
+            suggestion: None,
+        });
     }
     for k in &args.keyterms {
         if k.len() > 50 {
-            return Err(AppError::InvalidInput(format!(
-                "--keyterm '{k}' exceeds 50 characters"
-            )));
+            return Err(AppError::InvalidInput {
+                msg: format!("--keyterm '{k}' exceeds 50 characters"),
+                suggestion: None,
+            });
         }
     }
     if args.webhook_id.is_some() && !args.webhook {
-        return Err(AppError::InvalidInput(
-            "--webhook-id requires --webhook".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "--webhook-id requires --webhook".into(),
+            suggestion: None,
+        });
     }
     if let Some(md) = &args.webhook_metadata {
-        serde_json::from_str::<serde_json::Value>(md).map_err(|e| {
-            AppError::InvalidInput(format!("--webhook-metadata is not valid JSON: {e}"))
+        serde_json::from_str::<serde_json::Value>(md).map_err(|e| AppError::InvalidInput {
+            msg: format!("--webhook-metadata is not valid JSON: {e}"),
+            suggestion: None,
         })?;
     }
 

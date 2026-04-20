@@ -1,15 +1,19 @@
 //! `phone batch submit` CSV + JSON recipient parsing + request body shape.
 //!
 //! These tests exercise the CSV/JSON recipient loader and verify that the
-//! POST body sent to `/v1/convai/batch-calling/submit` matches the spec:
+//! POST body sent to `/v1/convai/batch-calling/submit` matches the SDK:
 //!
 //!   {
 //!     "agent_id": "...",
 //!     "agent_phone_number_id": "...",
 //!     "recipients": [{"phone_number": "+1...", "conversation_initiation_client_data": {...}?}, ...],
-//!     "name"?: "...",
+//!     "call_name"?: "...",                  // SDK field is `call_name`, NOT `name`
 //!     "scheduled_time_unix"?: 1234567890
 //!   }
+//!
+//! Grounded against:
+//! https://github.com/elevenlabs/elevenlabs-python/blob/main/src/elevenlabs/conversational_ai/batch_calls/raw_client.py
+//! (the `create` method's JSON body).
 
 use assert_cmd::Command as AssertCmd;
 use std::io::Write;
@@ -101,7 +105,12 @@ async fn submit_csv_basic_body_shape() {
     let body = captured.lock().unwrap().clone().expect("no body captured");
     assert_eq!(body["agent_id"], "agent_1");
     assert_eq!(body["agent_phone_number_id"], "phone_1");
-    assert_eq!(body["name"], "My Batch");
+    // SDK field name is `call_name` (not `name`).
+    assert_eq!(body["call_name"], "My Batch");
+    assert!(
+        body.get("name").is_none(),
+        "stale `name` field must be gone"
+    );
     assert_eq!(body["scheduled_time_unix"], 1700000000);
     let recipients = body["recipients"].as_array().expect("recipients array");
     assert_eq!(recipients.len(), 2);
@@ -176,6 +185,9 @@ async fn submit_json_array_body_shape() {
         recipients[0]["conversation_initiation_client_data"]["k"],
         "v"
     );
+    // Neither `call_name` nor the stale `name` should be present — the
+    // test did not pass `--name`.
+    assert!(body.get("call_name").is_none());
     assert!(body.get("name").is_none());
     assert!(body.get("scheduled_time_unix").is_none());
 }

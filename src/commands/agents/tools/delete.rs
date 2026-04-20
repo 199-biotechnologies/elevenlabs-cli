@@ -12,9 +12,12 @@ pub async fn run(
     yes: bool,
 ) -> Result<(), AppError> {
     if !yes {
-        return Err(AppError::InvalidInput(format!(
-            "refusing to delete tool {tool_id} without --yes (deletion is irreversible)"
-        )));
+        return Err(AppError::InvalidInput {
+            msg: format!(
+                "refusing to delete tool {tool_id} without --yes (deletion is irreversible)"
+            ),
+            suggestion: None,
+        });
     }
     let url = format!("/v1/convai/tools/{tool_id}");
     client.delete(&url).await?;

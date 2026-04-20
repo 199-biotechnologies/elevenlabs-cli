@@ -87,10 +87,10 @@ async fn isolate(
 ) -> Result<(), AppError> {
     let path = Path::new(&file);
     if !path.exists() {
-        return Err(AppError::InvalidInput(format!(
-            "file does not exist: {}",
-            path.display()
-        )));
+        return Err(AppError::InvalidInput {
+            msg: format!("file does not exist: {}", path.display()),
+            suggestion: None,
+        });
     }
     let bytes = crate::commands::read_file_bytes(path).await?;
     let mime = crate::commands::mime_for_path(path);
@@ -162,10 +162,10 @@ async fn convert(
 ) -> Result<(), AppError> {
     let path = Path::new(&args.file);
     if !path.exists() {
-        return Err(AppError::InvalidInput(format!(
-            "file does not exist: {}",
-            path.display()
-        )));
+        return Err(AppError::InvalidInput {
+            msg: format!("file does not exist: {}", path.display()),
+            suggestion: None,
+        });
     }
 
     let voice_id = if let Some(id) = args.voice_id {
@@ -311,8 +311,11 @@ async fn resolve_voice_by_name(client: &ElevenLabsClient, name: &str) -> Result<
             return Ok(id.to_string());
         }
     }
-    Err(AppError::InvalidInput(format!(
-        "no voice in your library matches '{name}'. \
+    Err(AppError::InvalidInput {
+        msg: format!(
+            "no voice in your library matches '{name}'. \
          List voices with: elevenlabs voices list"
-    )))
+        ),
+        suggestion: None,
+    })
 }

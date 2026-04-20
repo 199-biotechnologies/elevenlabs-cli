@@ -18,15 +18,22 @@ pub async fn run(
     bookmarked: Option<bool>,
 ) -> Result<(), AppError> {
     if public_user_id.trim().is_empty() {
-        return Err(AppError::InvalidInput("public_user_id is required".into()));
+        return Err(AppError::InvalidInput {
+            msg: "public_user_id is required".into(),
+            suggestion: None,
+        });
     }
     if voice_id.trim().is_empty() {
-        return Err(AppError::InvalidInput("voice_id is required".into()));
+        return Err(AppError::InvalidInput {
+            msg: "voice_id is required".into(),
+            suggestion: None,
+        });
     }
     if new_name.trim().is_empty() {
-        return Err(AppError::InvalidInput(
-            "--name is required (the name under which the shared voice will be saved)".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "--name is required (the name under which the shared voice will be saved)".into(),
+            suggestion: None,
+        });
     }
 
     let mut body = serde_json::Map::new();

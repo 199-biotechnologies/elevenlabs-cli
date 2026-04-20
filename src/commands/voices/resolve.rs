@@ -52,8 +52,11 @@ pub async fn resolve_voice_id_by_name(
         }
     }
 
-    Err(AppError::InvalidInput(format!(
-        "no voice in your library matches '{name}'. \
+    Err(AppError::InvalidInput {
+        msg: format!(
+            "no voice in your library matches '{name}'. \
          List voices with: elevenlabs voices list"
-    )))
+        ),
+        suggestion: None,
+    })
 }

@@ -46,10 +46,10 @@ struct AlignResult {
 pub async fn run(ctx: Ctx, args: AlignArgs) -> Result<(), AppError> {
     let audio_path = Path::new(&args.audio);
     if !audio_path.exists() {
-        return Err(AppError::InvalidInput(format!(
-            "audio file does not exist: {}",
-            audio_path.display()
-        )));
+        return Err(AppError::InvalidInput {
+            msg: format!("audio file does not exist: {}", audio_path.display()),
+            suggestion: None,
+        });
     }
 
     // Resolve the transcript: `--transcript-file <path>` wins, otherwise we
@@ -57,11 +57,13 @@ pub async fn run(ctx: Ctx, args: AlignArgs) -> Result<(), AppError> {
     // (heuristic: short, no newlines, and exists on disk), treat as a path.
     let transcript = resolve_transcript(&args).await?;
     if transcript.trim().is_empty() {
-        return Err(AppError::InvalidInput(
-            "transcript is empty — provide --transcript-file <path> or a non-empty positional \
+        return Err(AppError::InvalidInput {
+            msg:
+                "transcript is empty — provide --transcript-file <path> or a non-empty positional \
              text argument"
-                .into(),
-        ));
+                    .into(),
+            suggestion: None,
+        });
     }
 
     let cfg = config::load()?;
@@ -130,15 +132,20 @@ async fn resolve_transcript(args: &AlignArgs) -> Result<String, AppError> {
     if let Some(path) = &args.transcript_file {
         return tokio::fs::read_to_string(Path::new(path))
             .await
-            .map_err(|e| AppError::InvalidInput(format!("read transcript file {path}: {e}")));
+            .map_err(|e| AppError::InvalidInput {
+                msg: format!("read transcript file {path}: {e}"),
+                suggestion: None,
+            });
     }
-    let text = args.transcript.as_ref().ok_or_else(|| {
-        AppError::InvalidInput(
-            "forced alignment requires a transcript — pass it as the second positional \
+    let text = args
+        .transcript
+        .as_ref()
+        .ok_or_else(|| AppError::InvalidInput {
+            msg: "forced alignment requires a transcript — pass it as the second positional \
              or use --transcript-file <path>"
                 .into(),
-        )
-    })?;
+            suggestion: None,
+        })?;
 
     // If the argument looks like a small existing file path, load it. Large
     // pasted texts with newlines stay inline.
@@ -149,7 +156,10 @@ async fn resolve_transcript(args: &AlignArgs) -> Result<String, AppError> {
     if looks_like_path {
         return tokio::fs::read_to_string(Path::new(text))
             .await
-            .map_err(|e| AppError::InvalidInput(format!("read transcript file {text}: {e}")));
+            .map_err(|e| AppError::InvalidInput {
+                msg: format!("read transcript file {text}: {e}"),
+                suggestion: None,
+            });
     }
     Ok(text.clone())
 }

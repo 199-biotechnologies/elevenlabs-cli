@@ -1,4 +1,8 @@
 //! `agents delete` — remove an agent. Irreversible server-side.
+//!
+//! Requires `--yes` because deletion cascades: conversations, attached
+//! knowledge-base entries, and tool-dependency edges all disappear with
+//! the agent.
 
 use crate::client::ElevenLabsClient;
 use crate::error::AppError;

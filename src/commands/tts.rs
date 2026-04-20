@@ -44,27 +44,33 @@ pub async fn run(ctx: Ctx, mut args: TtsArgs) -> Result<(), AppError> {
         args.text = s.trim().to_string();
     }
     if args.text.trim().is_empty() {
-        return Err(AppError::InvalidInput("text is empty".into()));
+        return Err(AppError::InvalidInput {
+            msg: "text is empty".into(),
+            suggestion: None,
+        });
     }
 
     // Validation: combined stream+with-timestamps uses a separate NDJSON
     // protocol that we don't support yet. Tell the user which to pick.
     if args.stream && args.with_timestamps {
-        return Err(AppError::InvalidInput(
-            "--stream + --with-timestamps together uses an NDJSON stream protocol \
+        return Err(AppError::InvalidInput {
+            msg: "--stream + --with-timestamps together uses an NDJSON stream protocol \
              not yet supported. Use one or the other in v0.1.4."
                 .into(),
-        ));
+            suggestion: None,
+        });
     }
     if args.previous_request_ids.len() > 3 {
-        return Err(AppError::InvalidInput(
-            "--previous-request-id may be specified at most 3 times".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "--previous-request-id may be specified at most 3 times".into(),
+            suggestion: None,
+        });
     }
     if args.next_request_ids.len() > 3 {
-        return Err(AppError::InvalidInput(
-            "--next-request-id may be specified at most 3 times".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "--next-request-id may be specified at most 3 times".into(),
+            suggestion: None,
+        });
     }
 
     let cfg = config::load()?;
@@ -334,10 +340,13 @@ async fn resolve_voice_name(client: &ElevenLabsClient, name: &str) -> Result<Str
             return Ok(id.to_string());
         }
     }
-    Err(AppError::InvalidInput(format!(
-        "no voice in your library matches '{name}'. \
+    Err(AppError::InvalidInput {
+        msg: format!(
+            "no voice in your library matches '{name}'. \
          List voices with: elevenlabs voices list"
-    )))
+        ),
+        suggestion: None,
+    })
 }
 
 pub fn extension_for_format(fmt: &str) -> &'static str {

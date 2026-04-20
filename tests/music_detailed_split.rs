@@ -1,9 +1,13 @@
-//! music detailed writes two files: the decoded audio and a companion
-//! JSON with everything except the raw audio. This locks in the split
-//! contract so downstream tooling can rely on both files being written.
+//! music detailed returns a multipart/mixed body with JSON metadata and
+//! binary audio. Verified against the Python SDK's `compose_detailed`
+//! method. These tests pin the contract:
+//!   - the CLI writes the audio part to `--output`
+//!   - the CLI writes the JSON metadata to `--save-metadata`
+//!     (default: `<output>.metadata.json`)
+//!   - the metadata file contains the JSON verbatim (pretty-printed),
+//!     NOT wrapped in an `audio_base64` shell.
 
 use assert_cmd::Command as AssertCmd;
-use base64::Engine as _;
 use std::io::Write;
 use std::path::PathBuf;
 use wiremock::matchers::{method, path};
@@ -21,24 +25,61 @@ fn temp_config_with_key(api_key: &str) -> (tempfile::TempDir, PathBuf) {
     (dir, cfg)
 }
 
+/// Build a minimal multipart/mixed body: JSON metadata part first, then
+/// the audio part. Matches what the ElevenLabs server sends per SDK.
+fn build_multipart_mixed(
+    boundary: &str,
+    json_bytes: &[u8],
+    audio_bytes: &[u8],
+    audio_mime: &str,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    // Part 1: JSON metadata
+    out.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    out.extend_from_slice(b"Content-Type: application/json\r\n\r\n");
+    out.extend_from_slice(json_bytes);
+    out.extend_from_slice(b"\r\n");
+    // Part 2: audio
+    out.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    out.extend_from_slice(format!("Content-Type: {audio_mime}\r\n\r\n").as_bytes());
+    out.extend_from_slice(audio_bytes);
+    out.extend_from_slice(b"\r\n");
+    // Terminator
+    out.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    out
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn music_detailed_splits_audio_and_metadata() {
+async fn music_detailed_splits_multipart_audio_and_metadata() {
     let audio_bytes = b"DECODED_AUDIO_CONTENT";
-    let audio_b64 = base64::engine::general_purpose::STANDARD.encode(audio_bytes);
+    let metadata = serde_json::json!({
+        "bpm": 128,
+        "time_signature": "4/4",
+        "key": "C major",
+        "sections": [
+            {"name": "intro", "start_ms": 0, "end_ms": 4000},
+            {"name": "drop",  "start_ms": 4000, "end_ms": 12000},
+        ],
+    });
+    let boundary = "elevenlabs-music-boundary-abc123";
+    let body = build_multipart_mixed(
+        boundary,
+        serde_json::to_vec(&metadata).unwrap().as_slice(),
+        audio_bytes,
+        "audio/mpeg",
+    );
 
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/music/detailed"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "audio_base64": audio_b64,
-            "bpm": 128,
-            "time_signature": "4/4",
-            "key": "C major",
-            "sections": [
-                {"name": "intro", "start_ms": 0, "end_ms": 4000},
-                {"name": "drop",  "start_ms": 4000, "end_ms": 12000},
-            ],
-        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header(
+                    "content-type",
+                    format!("multipart/mixed; boundary={boundary}").as_str(),
+                )
+                .set_body_bytes(body),
+        )
         .mount(&mock)
         .await;
 
@@ -71,16 +112,14 @@ async fn music_detailed_splits_audio_and_metadata() {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    // Audio file must contain the decoded base64 body, not the base64 text.
+    // Audio file must be exactly the binary part — no base64, no JSON shell.
     let audio_disk = std::fs::read(&audio_path).unwrap();
     assert_eq!(
         audio_disk, audio_bytes,
-        "audio file must be the decoded base64 content"
+        "audio file must be the raw binary part from the multipart response"
     );
 
-    // Metadata JSON must be valid and contain the non-audio fields, and
-    // MUST NOT contain the `audio_base64` field (which would duplicate
-    // the payload and bloat the JSON).
+    // Metadata file must contain the JSON fields.
     let meta_disk: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&metadata_path).unwrap()).unwrap();
     assert_eq!(meta_disk["bpm"], 128);
@@ -89,7 +128,7 @@ async fn music_detailed_splits_audio_and_metadata() {
     assert!(meta_disk["sections"].is_array());
     assert!(
         meta_disk.get("audio_base64").is_none(),
-        "metadata JSON must not include the base64 audio blob"
+        "metadata JSON must not include an audio_base64 field"
     );
 
     // Envelope should reference both paths.
@@ -106,15 +145,28 @@ async fn music_detailed_splits_audio_and_metadata() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn music_detailed_metadata_default_path_next_to_audio() {
-    // Without --save-metadata, the companion file should land next to the
-    // audio with a `.metadata.json` suffix.
+    // Without --save-metadata, the companion file should land next to
+    // the audio with a `.metadata.json` suffix.
+    let metadata = serde_json::json!({ "bpm": 100 });
+    let boundary = "b123";
+    let body = build_multipart_mixed(
+        boundary,
+        serde_json::to_vec(&metadata).unwrap().as_slice(),
+        b"AUDIO",
+        "audio/mpeg",
+    );
+
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/music/detailed"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "audio_base64": base64::engine::general_purpose::STANDARD.encode(b"AUDIO"),
-            "bpm": 100,
-        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header(
+                    "content-type",
+                    format!("multipart/mixed; boundary={boundary}").as_str(),
+                )
+                .set_body_bytes(body),
+        )
         .mount(&mock)
         .await;
 

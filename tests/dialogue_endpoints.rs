@@ -80,10 +80,17 @@ async fn dialogue_default_posts_to_root() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn dialogue_stream_posts_to_stream() {
+    // Streaming contract per elevenlabs-python: NDJSON with {audio_base64}
+    // per line. Each line is base64-decoded and appended to --output.
+    let ndjson = format!(
+        "{{\"audio_base64\":\"{}\"}}\n{{\"audio_base64\":\"{}\"}}\n",
+        fake_b64_audio(),
+        fake_b64_audio()
+    );
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/text-to-dialogue/stream"))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"FAKESTREAM".to_vec()))
+        .respond_with(ResponseTemplate::new(200).set_body_string(ndjson))
         .mount(&mock)
         .await;
 
@@ -170,16 +177,19 @@ async fn dialogue_with_timestamps_posts_to_with_timestamps() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn dialogue_stream_with_timestamps_posts_to_combined_path() {
+    // Streaming+timestamps contract: NDJSON with {audio_base64, alignment}
+    // per line. Audio appended to --output, alignment appended to a JSONL
+    // companion.
+    let ndjson = format!(
+        "{{\"audio_base64\":\"{}\",\"alignment\":{{\"characters\":[]}}}}\n\
+         {{\"audio_base64\":\"{}\",\"alignment\":{{\"characters\":[]}}}}\n",
+        fake_b64_audio(),
+        fake_b64_audio()
+    );
     let mock = MockServer::start().await;
-    // Respond with a chunks[] envelope (streamed with-timestamps JSON shape).
     Mock::given(method("POST"))
         .and(path("/v1/text-to-dialogue/stream/with-timestamps"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "chunks": [
-                { "audio_base64": fake_b64_audio(), "alignment": {} },
-                { "audio_base64": fake_b64_audio(), "alignment": {} },
-            ]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_string(ndjson))
         .mount(&mock)
         .await;
 

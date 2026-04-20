@@ -92,24 +92,41 @@ async fn dispatch_whatsapp(
     match action {
         PhoneWhatsappAction::Call {
             agent_id,
-            whatsapp_account,
-            recipient,
-        } => whatsapp::call::run(ctx, client, agent_id, whatsapp_account, recipient).await,
+            whatsapp_phone_number_id,
+            whatsapp_user_id,
+            permission_template_name,
+            permission_template_language_code,
+        } => {
+            whatsapp::call::run(
+                ctx,
+                client,
+                agent_id,
+                whatsapp_phone_number_id,
+                whatsapp_user_id,
+                permission_template_name,
+                permission_template_language_code,
+            )
+            .await
+        }
         PhoneWhatsappAction::Message {
             agent_id,
-            whatsapp_account,
-            recipient,
-            text,
-            template,
+            whatsapp_phone_number_id,
+            whatsapp_user_id,
+            template_name,
+            template_language_code,
+            template_params,
+            client_data,
         } => {
             whatsapp::message::run(
                 ctx,
                 client,
                 agent_id,
-                whatsapp_account,
-                recipient,
-                text,
-                template,
+                whatsapp_phone_number_id,
+                whatsapp_user_id,
+                template_name,
+                template_language_code,
+                template_params,
+                client_data,
             )
             .await
         }

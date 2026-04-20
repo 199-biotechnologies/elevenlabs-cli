@@ -10,20 +10,19 @@ use crate::output::{self, Ctx};
 pub async fn run(ctx: Ctx, client: &ElevenLabsClient, config: String) -> Result<(), AppError> {
     let path = Path::new(&config);
     if !path.exists() {
-        return Err(AppError::InvalidInput(format!(
-            "config file does not exist: {}",
-            path.display()
-        )));
+        return Err(AppError::InvalidInput {
+            msg: format!("config file does not exist: {}", path.display()),
+            suggestion: None,
+        });
     }
     let body_text = tokio::fs::read_to_string(path)
         .await
         .map_err(AppError::Io)?;
-    let body: serde_json::Value = serde_json::from_str(&body_text).map_err(|e| {
-        AppError::InvalidInput(format!(
-            "config file {} is not valid JSON: {e}",
-            path.display()
-        ))
-    })?;
+    let body: serde_json::Value =
+        serde_json::from_str(&body_text).map_err(|e| AppError::InvalidInput {
+            msg: format!("config file {} is not valid JSON: {e}", path.display()),
+            suggestion: None,
+        })?;
 
     let resp: serde_json::Value = client.post_json("/v1/convai/tools", &body).await?;
     output::print_success_or(ctx, &resp, |v| {

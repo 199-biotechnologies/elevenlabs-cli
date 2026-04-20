@@ -3,11 +3,16 @@
 //! For every batch sub-subcommand we wire a wiremock that ONLY matches the
 //! expected method + path. If the CLI regresses to a wrong path or verb, the
 //! mock won't match → wiremock returns 404 → the test fails fast.
+//!
+//! The `list` test additionally pins the SDK-correct query param names
+//! (`limit`, `last_doc`) — see
+//! https://github.com/elevenlabs/elevenlabs-python/blob/main/src/elevenlabs/conversational_ai/batch_calls/raw_client.py
+//! (`list` method params dict).
 
 use assert_cmd::Command as AssertCmd;
 use std::io::Write;
 use std::path::PathBuf;
-use wiremock::matchers::{method, path};
+use wiremock::matchers::{method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn bin() -> AssertCmd {
@@ -25,15 +30,21 @@ fn temp_config_with_key(api_key: &str) -> (tempfile::TempDir, PathBuf) {
 // ── list ───────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread")]
-async fn batch_list_hits_workspace_endpoint() {
+async fn batch_list_hits_workspace_endpoint_with_sdk_query_params() {
     let mock = MockServer::start().await;
+    // Mock matches ONLY when the SDK-correct query params are present:
+    //   ?limit=10&last_doc=cursor_abc
+    // If the CLI regresses to `page_size`/`cursor`, the mock will reject
+    // the request (404 from wiremock) and the CLI should surface exit 1.
     Mock::given(method("GET"))
         .and(path("/v1/convai/batch-calling/workspace"))
+        .and(query_param("limit", "10"))
+        .and(query_param("last_doc", "cursor_abc"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "batch_calls": [
-                {"id": "batch_1", "name": "Demo", "status": "queued", "agent_id": "a1"},
+                {"id": "batch_1", "call_name": "Demo", "status": "queued", "agent_id": "a1"},
             ],
-            "next_cursor": "c_next"
+            "next_doc": "cursor_next"
         })))
         .mount(&mock)
         .await;
@@ -47,10 +58,11 @@ async fn batch_list_hits_workspace_endpoint() {
             "phone",
             "batch",
             "list",
+            // user-facing flag names unchanged — CLI maps internally
             "--page-size",
             "10",
-            "--status",
-            "queued",
+            "--cursor",
+            "cursor_abc",
         ])
         .output()
         .unwrap();

@@ -15,9 +15,10 @@ pub async fn run(
     words: Vec<String>,
 ) -> Result<(), AppError> {
     if words.is_empty() {
-        return Err(AppError::InvalidInput(
-            "pass at least one --word <string_to_replace> to remove".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "pass at least one --word <string_to_replace> to remove".into(),
+            suggestion: None,
+        });
     }
     let trimmed: Vec<String> = words
         .into_iter()
@@ -25,9 +26,10 @@ pub async fn run(
         .filter(|w| !w.is_empty())
         .collect();
     if trimmed.is_empty() {
-        return Err(AppError::InvalidInput(
-            "all --word values were empty after trimming".into(),
-        ));
+        return Err(AppError::InvalidInput {
+            msg: "all --word values were empty after trimming".into(),
+            suggestion: None,
+        });
     }
     let count = trimmed.len();
     let body = serde_json::json!({ "rule_strings": trimmed });

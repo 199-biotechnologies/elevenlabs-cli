@@ -16,7 +16,10 @@ pub async fn run(
     model: Option<String>,
 ) -> Result<(), AppError> {
     if prompt.trim().is_empty() {
-        return Err(AppError::InvalidInput("prompt is empty".into()));
+        return Err(AppError::InvalidInput {
+            msg: "prompt is empty".into(),
+            suggestion: None,
+        });
     }
     let mut body = serde_json::Map::new();
     body.insert("prompt".into(), serde_json::Value::String(prompt));

@@ -11,9 +11,10 @@ pub async fn run(
     yes: bool,
 ) -> Result<(), AppError> {
     if !yes {
-        return Err(AppError::InvalidInput(format!(
-            "deleting '{dubbing_id}' is irreversible — pass --yes to confirm"
-        )));
+        return Err(AppError::InvalidInput {
+            msg: format!("deleting '{dubbing_id}' is irreversible — pass --yes to confirm"),
+            suggestion: None,
+        });
     }
     let path = format!("/v1/dubbing/{dubbing_id}");
     client.delete(&path).await?;

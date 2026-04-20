@@ -1,9 +1,20 @@
 //! music upload — POST /v1/music/upload
 //!
-//! Multipart upload of an existing audio file so it can be referenced by
-//! `song_id` in later inpainting / regeneration calls. Returns the
-//! server-assigned `song_id`. Optional `--composition-plan <file>` lets
-//! the user attach a plan alongside the audio.
+//! Contract (verified against elevenlabs-python/src/elevenlabs/music/
+//! raw_client.py `upload`, April 2026):
+//!
+//!   - multipart body, required field `file`
+//!   - optional form field `extract_composition_plan` (bool)
+//!   - response: JSON `{ song_id, composition_plan?, ... }`
+//!
+//! Historical note: pre-v0.2 this CLI also sent `name` and
+//! `composition_plan` form fields. Neither exists in the SDK — both
+//! have been removed. See `plans/cli-snippets/fixes/beta/cli.rs` for
+//! the clap-level argument change.
+//!
+//! `--extract-composition-plan` increases latency server-side (see the
+//! Python SDK docstring) but returns the generated plan inline so it
+//! can be piped straight into `music compose --composition-plan <file>`.
 
 use std::path::Path;
 
@@ -15,7 +26,7 @@ use crate::output::{self, Ctx};
 pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: UploadArgs) -> Result<(), AppError> {
     let path = Path::new(&args.file);
     if !path.exists() {
-        return Err(AppError::InvalidInput(format!(
+        return Err(AppError::bad_input(format!(
             "file does not exist: {}",
             path.display()
         )));
@@ -33,23 +44,12 @@ pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: UploadArgs) -> Resul
         .map_err(|e| AppError::Http(format!("invalid mime '{mime}': {e}")))?;
 
     let mut form = reqwest::multipart::Form::new().part("file", file_part);
-    if let Some(name) = &args.name {
-        form = form.text("name", name.clone());
-    }
-    if let Some(plan_path) = &args.composition_plan {
-        let content = tokio::fs::read_to_string(plan_path)
-            .await
-            .map_err(AppError::Io)?;
-        // Validate it parses before shipping so we fail early with a good error.
-        let _: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-            AppError::InvalidInput(format!("--composition-plan is not valid JSON: {e}"))
-        })?;
-        form = form.text("composition_plan", content);
+    if args.extract_composition_plan {
+        form = form.text("extract_composition_plan", "true".to_string());
     }
 
     let resp: serde_json::Value = client.post_multipart_json("/v1/music/upload", form).await?;
 
-    // Response shape: { song_id, ... }
     let song_id = resp
         .get("song_id")
         .and_then(|v| v.as_str())
@@ -58,7 +58,7 @@ pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: UploadArgs) -> Resul
     let result = serde_json::json!({
         "input": path.display().to_string(),
         "song_id": song_id,
-        "name": args.name,
+        "extract_composition_plan": args.extract_composition_plan,
         "response": resp,
     });
     output::print_success_or(ctx, &result, |r| {

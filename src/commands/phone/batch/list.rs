@@ -1,4 +1,16 @@
 //! `phone batch list` — GET /v1/convai/batch-calling/workspace
+//!
+//! The SDK (elevenlabs-python batch_calls/raw_client.py `list`) only
+//! supports `limit` and `last_doc` query params. The CLI's user-facing
+//! flag names stay `--page-size` and `--cursor` for ergonomic consistency
+//! with every other `list` command in this tree, but we map internally
+//! to the SDK-correct names.
+//!
+//! The pre-v0.2.0 CLI also exposed `--status` and `--agent-id` filters.
+//! Those do not exist server-side, so we accept the options in the
+//! function signature (to avoid breaking the dispatch layer) but silently
+//! ignore them. The flags should be removed from `src/cli.rs` — see
+//! `plans/cli-snippets/fixes/gamma/NOTES.md`.
 
 use crate::client::ElevenLabsClient;
 use crate::error::AppError;
@@ -9,22 +21,20 @@ pub async fn run(
     client: &ElevenLabsClient,
     page_size: Option<u32>,
     cursor: Option<String>,
-    status: Option<String>,
-    agent_id: Option<String>,
+    _status: Option<String>,
+    _agent_id: Option<String>,
 ) -> Result<(), AppError> {
     let mut params: Vec<(&str, String)> = Vec::new();
     if let Some(ps) = page_size {
-        params.push(("page_size", ps.min(100).to_string()));
+        // SDK field: `limit`. User-facing flag stays `--page-size`.
+        params.push(("limit", ps.min(100).to_string()));
     }
     if let Some(c) = cursor {
-        params.push(("cursor", c));
+        // SDK field: `last_doc`. User-facing flag stays `--cursor`.
+        params.push(("last_doc", c));
     }
-    if let Some(s) = status {
-        params.push(("status", s));
-    }
-    if let Some(a) = agent_id {
-        params.push(("agent_id", a));
-    }
+    // `_status` and `_agent_id` are intentionally dropped — the
+    // workspace listing endpoint has no server-side filters per SDK.
 
     let resp: serde_json::Value = client
         .get_json_with_query("/v1/convai/batch-calling/workspace", &params)
@@ -60,7 +70,8 @@ pub async fn run(
                     .unwrap_or("")
                     .dimmed()
                     .to_string(),
-                b.get("name")
+                b.get("call_name")
+                    .or_else(|| b.get("name"))
                     .and_then(|x| x.as_str())
                     .unwrap_or("")
                     .bold()
@@ -91,7 +102,13 @@ pub async fn run(
             ]);
         }
         println!("{t}");
-        if let Some(next) = v.get("next_cursor").and_then(|x| x.as_str()) {
+        // SDK's response field for the next page token is `last_doc`.
+        if let Some(next) = v
+            .get("next_doc")
+            .or_else(|| v.get("last_doc"))
+            .or_else(|| v.get("next_cursor"))
+            .and_then(|x| x.as_str())
+        {
             if !next.is_empty() {
                 println!("\nnext page: --cursor {next}");
             }

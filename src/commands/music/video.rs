@@ -1,9 +1,24 @@
 //! music video-to-music — POST /v1/music/video-to-music
 //!
-//! NEW Apr 1, 2026. Takes a video file as input and generates a musical
-//! score that matches the visual content. Multipart: `file` = video.
-//! Optional text hints: `--description`, `--tags`. Returns audio bytes
-//! (same shape as compose) with output_format controllable via query.
+//! Contract (verified against elevenlabs-python/src/elevenlabs/music/
+//! raw_client.py `video_to_music`, April 2026):
+//!
+//!   - multipart body, repeatable part `videos` (one per input video);
+//!     videos are combined in order server-side
+//!   - optional form fields: `description`, repeated `tags`,
+//!     `sign_with_c2pa`
+//!   - optional query: `output_format`
+//!   - response: raw audio bytes (same as `music compose`), file
+//!     extension derived from the requested `output_format`
+//!
+//! Historical note: pre-v0.2 this CLI used the multipart part name
+//! `file` and sent `model_id`. Neither matches the SDK — the part is
+//! `videos`, and there is no model_id field on this endpoint. See
+//! `plans/cli-snippets/fixes/beta/cli.rs` for the clap-level changes.
+//!
+//! The CLI accepts a single `--file` for now. Each invocation attaches
+//! one video under the `videos` part name so multi-file support is a
+//! flag-level change rather than a rewrite.
 
 use std::path::Path;
 
@@ -20,7 +35,7 @@ pub async fn run(
 ) -> Result<(), AppError> {
     let path = Path::new(&args.file);
     if !path.exists() {
-        return Err(AppError::InvalidInput(format!(
+        return Err(AppError::bad_input(format!(
             "video file does not exist: {}",
             path.display()
         )));
@@ -32,20 +47,22 @@ pub async fn run(
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "video".to_string());
-    let file_part = reqwest::multipart::Part::bytes(bytes)
+    // Part name is `videos` per the SDK — NOT `file`. The CLI sends one
+    // per invocation; the server accepts a list.
+    let video_part = reqwest::multipart::Part::bytes(bytes)
         .file_name(filename)
         .mime_str(&mime)
         .map_err(|e| AppError::Http(format!("invalid mime '{mime}': {e}")))?;
 
-    let mut form = reqwest::multipart::Form::new().part("file", file_part);
+    let mut form = reqwest::multipart::Form::new().part("videos", video_part);
     if let Some(desc) = &args.description {
         form = form.text("description", desc.clone());
     }
     for tag in &args.tags {
         form = form.text("tags", tag.clone());
     }
-    if let Some(m) = &args.model {
-        form = form.text("model_id", m.clone());
+    if args.sign_with_c2pa {
+        form = form.text("sign_with_c2pa", "true".to_string());
     }
 
     let output_format = args.format.unwrap_or_else(|| cfg.default_output_format());
@@ -68,6 +85,7 @@ pub async fn run(
         "output_format": output_format,
         "description": args.description,
         "tags": args.tags,
+        "sign_with_c2pa": args.sign_with_c2pa,
         "bytes_written": bytes_written,
     });
     output::print_success_or(ctx, &result, |r| {
