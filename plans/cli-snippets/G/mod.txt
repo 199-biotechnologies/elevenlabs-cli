@@ -1,0 +1,3 @@
+// voices is already registered in src/commands/mod.rs as `pub mod voices;`
+// — no change needed. Rust auto-detects the directory (voices/mod.rs) once
+// the old voices.rs file is deleted, which this worker has already done.
