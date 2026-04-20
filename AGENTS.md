@@ -21,7 +21,7 @@ checkout — future agents and humans have no way to benefit from them.
 | Bug reports | **Issues** on <https://github.com/paperfoot/elevenlabs-cli/issues> |
 | Feature proposals | Issues first, PR after discussion |
 | Security issues | Private: `security@199bio.com` (do **not** open a public issue) |
-| Homebrew formula updates | PR against <https://github.com/199-biotechnologies/homebrew-tap> (`Formula/elevenlabs.rb`) |
+| Homebrew formula updates | PR against <https://github.com/paperfoot/homebrew-tap> (`Formula/elevenlabs.rb`). The old tap at 199-biotechnologies/homebrew-tap is deprecated (`deprecate!` as of 2026-04-20) — users should `brew untap 199-biotechnologies/tap && brew tap paperfoot/tap`. |
 | New crates.io version | Tag `vX.Y.Z` on `main`, the release workflow cuts prebuilt binaries; `cargo publish` from a clean checkout |
 
 **PR etiquette for AI contributors:**
