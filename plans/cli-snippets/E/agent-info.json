@@ -1,0 +1,9 @@
+{
+  "music compose [prompt]": "Compose music from a text prompt. Length 3000-600000ms. Supports --composition-plan <file>, --force-instrumental, --seed, --model, --respect-sections-durations, --store-for-inpainting, --sign-with-c2pa.",
+  "music plan <prompt>": "Create a composition plan (free, returns JSON with sections)",
+  "music detailed [prompt]": "Generate music and a companion JSON with bpm, time_signature, sections. Same flags as compose, plus --save-metadata <path>. Audio and metadata are written to separate files.",
+  "music stream [prompt]": "Streaming compose: writes audio to disk chunk-by-chunk as the response arrives. Same flags as compose.",
+  "music upload <file>": "Upload a local audio file for later inpainting. Returns song_id. Flags: --name, --composition-plan <file>.",
+  "music stem-separation <song_id_or_file>": "Split a track into stems (aliases: stems). Flags: --output-dir, --stems <vocals|drums|bass|other> (repeatable, defaults to all four).",
+  "music video-to-music <video_file>": "Generate a score from video content (aliases: v2m). Flags: --description, --tag <tag> (repeatable), --model, --format, --output."
+}

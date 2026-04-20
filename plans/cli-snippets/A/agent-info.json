@@ -1,0 +1,15 @@
+{
+  "agents list": "List conversational AI agents",
+  "agents show <agent_id>": "Get agent details",
+  "agents create <name>": "Create a conversational AI agent. Defaults: --llm gemini-3.1-flash-lite-preview, --model-id eleven_flash_v2_5, --temperature 0.5, --language en.",
+  "agents update <agent_id> --patch <json_file>": "PATCH partial config (system_prompt, voice_id, tools, knowledge_base, etc.) into an existing agent without recreating it.",
+  "agents duplicate <agent_id>": "Clone an agent's config. Supports --name <new_name>.",
+  "agents delete <agent_id>": "Delete an agent",
+  "agents add-knowledge <agent_id> <name>": "Create a knowledge base document AND attach it to the agent (POSTs /v1/convai/knowledge-base/{url|file|text} then PATCHes conversation_config.agent.prompt.knowledge_base). One of --url, --file, --text is required.",
+  "agents tools list": "List workspace tools (aliases: ls)",
+  "agents tools show <tool_id>": "Show full tool config (aliases: get)",
+  "agents tools create --config <json_file>": "Create a tool from a JSON config file (aliases: new)",
+  "agents tools update <tool_id> --patch <json_file>": "PATCH partial tool config",
+  "agents tools delete <tool_id> --yes": "Delete a tool (irreversible; --yes required, aliases: rm)",
+  "agents tools deps <tool_id>": "List agents that depend on this tool (aliases: dependents)"
+}

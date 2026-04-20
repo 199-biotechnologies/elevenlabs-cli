@@ -1,0 +1,3 @@
+# No top-level module additions required. `src/commands/mod.rs` already
+# declares `pub mod phone;`, which now resolves to `src/commands/phone/mod.rs`
+# (a directory module) instead of the deleted `src/commands/phone.rs` file.

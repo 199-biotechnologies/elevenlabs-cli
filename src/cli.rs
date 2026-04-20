@@ -40,6 +40,13 @@ pub enum Commands {
     #[command(visible_alias = "sound")]
     Sfx(SfxArgs),
 
+    /// Generate multi-speaker dialogue with `eleven_v3`
+    #[command(visible_alias = "dlg")]
+    Dialogue(DialogueArgs),
+
+    /// Forced alignment: align a known transcript to an audio recording
+    Align(AlignArgs),
+
     // ── Domain: voices ──────────────────────────────────────────────────────
     /// Manage and search voices
     #[command(visible_alias = "voice")]
@@ -68,6 +75,20 @@ pub enum Commands {
     Music {
         #[command(subcommand)]
         action: MusicAction,
+    },
+
+    // ── Domain: dubbing ─────────────────────────────────────────────────────
+    /// Dub media into new languages (and edit dubs Studio-style)
+    Dubbing {
+        #[command(subcommand)]
+        action: DubbingAction,
+    },
+
+    // ── Domain: pronunciation dictionaries ──────────────────────────────────
+    /// Manage pronunciation dictionaries (IPA / alias lexicons)
+    Dict {
+        #[command(subcommand)]
+        action: DictAction,
     },
 
     // ── Domain: user / subscription ─────────────────────────────────────────
@@ -122,16 +143,22 @@ pub enum Commands {
     },
 
     /// Self-update from GitHub Releases
+    #[command(after_long_help = crate::help::UPDATE_HELP)]
     Update {
         /// Check only, do not install
         #[arg(long)]
         check: bool,
     },
+
+    /// Run environment + dependency diagnostics
+    #[command(after_long_help = crate::help::DOCTOR_HELP)]
+    Doctor(DoctorArgs),
 }
 
 // ── TTS ────────────────────────────────────────────────────────────────────
 
 #[derive(clap::Args, Debug, Clone)]
+#[command(after_long_help = crate::help::TTS_HELP)]
 pub struct TtsArgs {
     /// Text to synthesise (use - to read from stdin)
     pub text: String,
@@ -245,6 +272,7 @@ pub struct TtsArgs {
 // ── STT ────────────────────────────────────────────────────────────────────
 
 #[derive(clap::Args, Debug, Clone)]
+#[command(after_long_help = crate::help::STT_HELP)]
 pub struct SttArgs {
     /// Input audio/video file path. Omit when using --from-url or --source-url.
     pub file: Option<String>,
@@ -409,6 +437,7 @@ pub struct SttArgs {
 // ── SFX ────────────────────────────────────────────────────────────────────
 
 #[derive(clap::Args, Debug, Clone)]
+#[command(after_long_help = crate::help::SFX_HELP)]
 pub struct SfxArgs {
     /// Text description of the sound effect
     pub text: String,
@@ -442,14 +471,14 @@ pub struct SfxArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum VoicesAction {
-    /// List voices in your library
+    /// List voices in your library (v2)
     #[command(visible_alias = "ls")]
     List {
         /// Filter by search term
         #[arg(long)]
         search: Option<String>,
 
-        /// Sort by field (name|created_at_unix)
+        /// Sort field (name|created_at_unix)
         #[arg(long, default_value = "name")]
         sort: String,
 
@@ -457,13 +486,41 @@ pub enum VoicesAction {
         #[arg(long, default_value = "asc")]
         direction: String,
 
-        /// Max results
+        /// Max results per page (1-100)
         #[arg(long, default_value = "100")]
         limit: u32,
 
-        /// Include legacy premade voices
+        /// Include legacy premade voices (/v1 compatibility)
         #[arg(long)]
         show_legacy: bool,
+
+        /// Pagination cursor from a previous response
+        #[arg(long, value_name = "TOKEN")]
+        next_page_token: Option<String>,
+
+        /// Voice type filter: personal|community|default|workspace|non-default|non-community|saved
+        #[arg(long, value_parser = ["personal", "community", "default", "workspace", "non-default", "non-community", "saved"])]
+        voice_type: Option<String>,
+
+        /// Category filter: premade|cloned|generated|professional
+        #[arg(long, value_parser = ["premade", "cloned", "generated", "professional"])]
+        category: Option<String>,
+
+        /// Fine-tuning state (professional voices only)
+        #[arg(long, value_parser = ["draft", "not_verified", "not_started", "queued", "fine_tuning", "fine_tuned", "failed", "delayed"])]
+        fine_tuning_state: Option<String>,
+
+        /// Filter by collection ID
+        #[arg(long)]
+        collection_id: Option<String>,
+
+        /// Include the total voice count in the response
+        #[arg(long)]
+        include_total_count: bool,
+
+        /// Look up specific voice IDs (repeatable, max 100)
+        #[arg(long = "voice-id", value_name = "ID")]
+        voice_id: Vec<String>,
     },
 
     /// Get full details for a voice
@@ -480,6 +537,7 @@ pub enum VoicesAction {
     },
 
     /// Search the public (shared) voice library
+    #[command(after_long_help = crate::help::VOICES_LIBRARY_HELP)]
     Library {
         /// Search term
         #[arg(long)]
@@ -565,6 +623,7 @@ pub enum VoicesAction {
     },
 
     /// Generate voice previews from a text description (voice design)
+    #[command(after_long_help = crate::help::VOICES_DESIGN_HELP)]
     Design {
         /// Text description of the voice
         description: String,
@@ -629,6 +688,87 @@ pub enum VoicesAction {
         /// of silently deleting — required because deletion is irreversible.
         #[arg(long)]
         yes: bool,
+    },
+
+    /// Add a shared voice (from the public library) to your collection
+    AddShared {
+        /// Public user ID that owns the shared voice
+        public_user_id: String,
+
+        /// Voice ID in the public library
+        voice_id: String,
+
+        /// Name to save the voice under in your library
+        #[arg(long)]
+        name: String,
+
+        /// Mark the voice as bookmarked after adding
+        #[arg(long)]
+        bookmarked: Option<bool>,
+    },
+
+    /// Find shared voices similar to an audio sample
+    Similar {
+        /// Audio file to use as the reference sample
+        audio_file: String,
+
+        /// Similarity threshold 0.0-2.0 (lower = more similar)
+        #[arg(long)]
+        similarity_threshold: Option<f32>,
+
+        /// Maximum voices to return (1-100)
+        #[arg(long)]
+        top_k: Option<u32>,
+
+        /// Gender filter
+        #[arg(long)]
+        gender: Option<String>,
+
+        /// Age filter
+        #[arg(long)]
+        age: Option<String>,
+
+        /// Accent filter
+        #[arg(long)]
+        accent: Option<String>,
+
+        /// Language filter
+        #[arg(long)]
+        language: Option<String>,
+
+        /// Use case filter
+        #[arg(long)]
+        use_case: Option<String>,
+    },
+
+    /// Edit a voice — rename, re-describe, update labels, add/remove samples
+    Edit {
+        /// Voice ID to edit
+        voice_id: String,
+
+        /// New name
+        #[arg(long)]
+        name: Option<String>,
+
+        /// New description
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Label pair (key=value). Repeatable.
+        #[arg(long = "labels", value_name = "KEY=VALUE")]
+        labels: Vec<String>,
+
+        /// Additional sample file to upload. Repeatable.
+        #[arg(long = "add-sample", value_name = "FILE")]
+        add_sample: Vec<String>,
+
+        /// Sample ID to remove. Repeatable.
+        #[arg(long = "remove-sample", value_name = "SAMPLE_ID")]
+        remove_sample: Vec<String>,
+
+        /// Run added samples through the background-noise-removal model
+        #[arg(long)]
+        remove_background_noise: bool,
     },
 }
 
@@ -732,51 +872,8 @@ pub enum AudioAction {
 #[derive(Subcommand, Debug, Clone)]
 pub enum MusicAction {
     /// Compose music from a text prompt
-    Compose {
-        /// Text prompt. Mutually exclusive with --composition-plan.
-        #[arg(required_unless_present = "composition_plan")]
-        prompt: Option<String>,
-
-        /// Target length in milliseconds. Must be 3000-600000. Only used with --prompt.
-        #[arg(long, value_parser = clap::value_parser!(u32).range(3000..=600000))]
-        length_ms: Option<u32>,
-
-        /// Output audio format (default mp3_44100_128)
-        #[arg(long)]
-        format: Option<String>,
-
-        /// Output file path
-        #[arg(short, long)]
-        output: Option<String>,
-
-        /// Path to a composition-plan JSON file (mutually exclusive with PROMPT).
-        #[arg(long, value_name = "PATH", conflicts_with_all = ["prompt", "length_ms", "force_instrumental"])]
-        composition_plan: Option<String>,
-
-        /// Model ID (default music_v1)
-        #[arg(long)]
-        model: Option<String>,
-
-        /// Force the output to be instrumental. Only valid with --prompt.
-        #[arg(long)]
-        force_instrumental: bool,
-
-        /// Seed for reproducibility (cannot be combined with --prompt)
-        #[arg(long)]
-        seed: Option<u32>,
-
-        /// Strictly enforce per-section durations from the composition plan.
-        #[arg(long)]
-        respect_sections_durations: bool,
-
-        /// Store the generated song for inpainting (enterprise only)
-        #[arg(long)]
-        store_for_inpainting: bool,
-
-        /// Sign the output mp3 with C2PA
-        #[arg(long)]
-        sign_with_c2pa: bool,
-    },
+    #[command(after_long_help = crate::help::MUSIC_COMPOSE_HELP)]
+    Compose(ComposeArgs),
 
     /// Create a composition plan (free, subject to rate limits)
     Plan {
@@ -791,6 +888,228 @@ pub enum MusicAction {
         #[arg(long)]
         model: Option<String>,
     },
+
+    /// Generate music with rich metadata (bpm, time_signature, sections)
+    Detailed(DetailedArgs),
+
+    /// Stream the generated audio to disk as bytes arrive
+    Stream(StreamArgs),
+
+    /// Upload an audio file so it can be referenced by song_id for inpainting
+    Upload(UploadArgs),
+
+    /// Split a track into stems (vocals/drums/bass/other)
+    #[command(name = "stem-separation", visible_alias = "stems")]
+    StemSeparation(StemSeparationArgs),
+
+    /// Generate a score from video content (Apr 2026)
+    #[command(name = "video-to-music", visible_alias = "v2m")]
+    VideoToMusic(VideoToMusicArgs),
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct ComposeArgs {
+    /// Text prompt. Mutually exclusive with --composition-plan.
+    #[arg(required_unless_present = "composition_plan")]
+    pub prompt: Option<String>,
+
+    /// Target length in milliseconds. Must be 3000-600000. Only used with --prompt.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(3000..=600000))]
+    pub length_ms: Option<u32>,
+
+    /// Output audio format (default mp3_44100_128)
+    #[arg(long)]
+    pub format: Option<String>,
+
+    /// Output file path
+    #[arg(short, long)]
+    pub output: Option<String>,
+
+    /// Path to a composition-plan JSON file (mutually exclusive with PROMPT).
+    #[arg(long, value_name = "PATH", conflicts_with_all = ["prompt", "length_ms", "force_instrumental"])]
+    pub composition_plan: Option<String>,
+
+    /// Model ID (default music_v1)
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Force the output to be instrumental. Only valid with --prompt.
+    #[arg(long)]
+    pub force_instrumental: bool,
+
+    /// Seed for reproducibility (cannot be combined with --prompt)
+    #[arg(long)]
+    pub seed: Option<u32>,
+
+    /// Strictly enforce per-section durations from the composition plan.
+    #[arg(long)]
+    pub respect_sections_durations: bool,
+
+    /// Store the generated song for inpainting (enterprise only)
+    #[arg(long)]
+    pub store_for_inpainting: bool,
+
+    /// Sign the output mp3 with C2PA
+    #[arg(long)]
+    pub sign_with_c2pa: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct DetailedArgs {
+    /// Text prompt. Mutually exclusive with --composition-plan.
+    #[arg(required_unless_present = "composition_plan")]
+    pub prompt: Option<String>,
+
+    /// Target length in milliseconds (3000-600000). Only used with --prompt.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(3000..=600000))]
+    pub length_ms: Option<u32>,
+
+    /// Output audio format (default mp3_44100_128)
+    #[arg(long)]
+    pub format: Option<String>,
+
+    /// Output audio file path
+    #[arg(short, long)]
+    pub output: Option<String>,
+
+    /// Path to save the metadata JSON (defaults to <output>.metadata.json)
+    #[arg(long, value_name = "PATH")]
+    pub save_metadata: Option<String>,
+
+    /// Path to a composition-plan JSON file
+    #[arg(long, value_name = "PATH", conflicts_with_all = ["prompt", "length_ms", "force_instrumental"])]
+    pub composition_plan: Option<String>,
+
+    /// Model ID (default music_v1)
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Force instrumental output.
+    #[arg(long)]
+    pub force_instrumental: bool,
+
+    /// Seed for reproducibility
+    #[arg(long)]
+    pub seed: Option<u32>,
+
+    /// Respect per-section durations
+    #[arg(long)]
+    pub respect_sections_durations: bool,
+
+    /// Store song for inpainting
+    #[arg(long)]
+    pub store_for_inpainting: bool,
+
+    /// Sign output with C2PA
+    #[arg(long)]
+    pub sign_with_c2pa: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct StreamArgs {
+    /// Text prompt. Mutually exclusive with --composition-plan.
+    #[arg(required_unless_present = "composition_plan")]
+    pub prompt: Option<String>,
+
+    /// Target length in milliseconds (3000-600000)
+    #[arg(long, value_parser = clap::value_parser!(u32).range(3000..=600000))]
+    pub length_ms: Option<u32>,
+
+    /// Output audio format (default mp3_44100_128)
+    #[arg(long)]
+    pub format: Option<String>,
+
+    /// Output file path
+    #[arg(short, long)]
+    pub output: Option<String>,
+
+    /// Path to a composition-plan JSON file
+    #[arg(long, value_name = "PATH", conflicts_with_all = ["prompt", "length_ms", "force_instrumental"])]
+    pub composition_plan: Option<String>,
+
+    /// Model ID (default music_v1)
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Force instrumental output.
+    #[arg(long)]
+    pub force_instrumental: bool,
+
+    /// Seed for reproducibility
+    #[arg(long)]
+    pub seed: Option<u32>,
+
+    /// Respect per-section durations
+    #[arg(long)]
+    pub respect_sections_durations: bool,
+
+    /// Store song for inpainting
+    #[arg(long)]
+    pub store_for_inpainting: bool,
+
+    /// Sign output with C2PA
+    #[arg(long)]
+    pub sign_with_c2pa: bool,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct UploadArgs {
+    /// Local audio file to upload
+    pub file: String,
+
+    /// Friendly name for the song
+    #[arg(long)]
+    pub name: Option<String>,
+
+    /// Path to a composition-plan JSON file to attach
+    #[arg(long, value_name = "PATH")]
+    pub composition_plan: Option<String>,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct StemSeparationArgs {
+    /// Either a local audio file path or a song_id from `music upload`
+    #[arg(value_name = "SONG_ID_OR_FILE")]
+    pub source: String,
+
+    /// Directory to write the stem files into. Defaults to ./stems_<timestamp>.
+    #[arg(long, value_name = "DIR")]
+    pub output_dir: Option<String>,
+
+    /// Stems to extract. Repeatable. Default set: vocals, drums, bass, other.
+    #[arg(long = "stems", value_name = "STEM", default_values_t = vec![
+        "vocals".to_string(),
+        "drums".to_string(),
+        "bass".to_string(),
+        "other".to_string(),
+    ])]
+    pub stems: Vec<String>,
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct VideoToMusicArgs {
+    /// Input video file
+    pub file: String,
+
+    /// Optional text description to steer the score
+    #[arg(long)]
+    pub description: Option<String>,
+
+    /// Style / mood tags (repeatable)
+    #[arg(long = "tag", value_name = "TAG")]
+    pub tags: Vec<String>,
+
+    /// Model ID override
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Output audio format (default mp3_44100_128)
+    #[arg(long)]
+    pub format: Option<String>,
+
+    /// Output audio file path
+    #[arg(short, long)]
+    pub output: Option<String>,
 }
 
 // ── User ───────────────────────────────────────────────────────────────────
@@ -800,6 +1119,7 @@ pub enum UserAction {
     /// Get basic user info
     Info,
     /// Get subscription and usage info
+    #[command(after_long_help = crate::help::USER_SUBSCRIPTION_HELP)]
     Subscription,
 }
 
@@ -819,7 +1139,7 @@ pub enum AgentsAction {
     },
 
     /// Create a new agent
-    #[command(visible_alias = "new")]
+    #[command(visible_alias = "new", after_long_help = crate::help::AGENTS_CREATE_HELP)]
     Create {
         /// Agent name
         name: String,
@@ -840,17 +1160,37 @@ pub enum AgentsAction {
         #[arg(long, default_value = "en")]
         language: String,
 
-        /// LLM to use (default gemini-2.0-flash-001)
-        #[arg(long, default_value = "gemini-2.0-flash-001")]
+        /// LLM to use (default gemini-3.1-flash-lite-preview)
+        #[arg(long, default_value = "gemini-3.1-flash-lite-preview")]
         llm: String,
 
         /// Temperature 0.0-1.0
         #[arg(long, default_value = "0.5")]
         temperature: f32,
 
-        /// TTS model ID (default eleven_turbo_v2)
-        #[arg(long, default_value = "eleven_turbo_v2")]
+        /// TTS model ID (default eleven_flash_v2_5)
+        #[arg(long, default_value = "eleven_flash_v2_5")]
         model_id: String,
+    },
+
+    /// Update (PATCH) an agent's config from a JSON file
+    Update {
+        /// Agent ID
+        agent_id: String,
+        /// Path to a JSON file whose contents are the PATCH body.
+        /// Pass-through — lets you edit system_prompt, voice_id, tools,
+        /// knowledge_base, etc. without recreating the agent.
+        #[arg(long, value_name = "PATH")]
+        patch: String,
+    },
+
+    /// Duplicate an agent (clone config to a new agent_id)
+    Duplicate {
+        /// Agent ID to duplicate
+        agent_id: String,
+        /// Optional name override for the new agent
+        #[arg(long)]
+        name: Option<String>,
     },
 
     /// Delete an agent
@@ -860,7 +1200,8 @@ pub enum AgentsAction {
         agent_id: String,
     },
 
-    /// Add a knowledge base document to an agent
+    /// Add a knowledge base document and attach it to an agent
+    #[command(after_long_help = crate::help::AGENTS_ADD_KNOWLEDGE_HELP)]
     AddKnowledge {
         /// Agent ID
         agent_id: String,
@@ -879,6 +1220,63 @@ pub enum AgentsAction {
         /// Source text
         #[arg(long)]
         text: Option<String>,
+    },
+
+    /// Manage workspace-level tools
+    Tools {
+        #[command(subcommand)]
+        action: AgentsToolsAction,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum AgentsToolsAction {
+    /// List tools
+    #[command(visible_alias = "ls")]
+    List,
+
+    /// Show full tool config
+    #[command(visible_alias = "get")]
+    Show {
+        /// Tool ID
+        tool_id: String,
+    },
+
+    /// Create a tool from a JSON config file
+    #[command(visible_alias = "new")]
+    Create {
+        /// Path to a JSON file that becomes the POST body verbatim.
+        /// The tools API surface is wide (system/client/webhook/mcp tool
+        /// types, many fields each) — pass the JSON directly instead of
+        /// modelling every field as a flag.
+        #[arg(long, value_name = "PATH")]
+        config: String,
+    },
+
+    /// Update (PATCH) a tool from a JSON file
+    Update {
+        /// Tool ID
+        tool_id: String,
+        /// Path to a JSON file whose contents are the PATCH body.
+        #[arg(long, value_name = "PATH")]
+        patch: String,
+    },
+
+    /// Delete a tool (requires --yes)
+    #[command(visible_alias = "rm")]
+    Delete {
+        /// Tool ID
+        tool_id: String,
+        /// Confirm deletion. Without --yes the command errors out.
+        #[arg(long)]
+        yes: bool,
+    },
+
+    /// List agents that depend on this tool
+    #[command(visible_alias = "dependents")]
+    Deps {
+        /// Tool ID
+        tool_id: String,
     },
 }
 
@@ -919,6 +1317,7 @@ pub enum PhoneAction {
     List,
 
     /// Make an outbound call with an agent
+    #[command(after_long_help = crate::help::PHONE_CALL_HELP)]
     Call {
         /// Agent ID to handle the call
         agent_id: String,
@@ -931,6 +1330,176 @@ pub enum PhoneAction {
         #[arg(long)]
         to: String,
     },
+
+    /// Batch outbound calls (CSV or JSON recipients)
+    Batch {
+        #[command(subcommand)]
+        action: PhoneBatchAction,
+    },
+
+    /// WhatsApp channel: outbound calls, messages, and accounts
+    Whatsapp {
+        #[command(subcommand)]
+        action: PhoneWhatsappAction,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PhoneBatchAction {
+    /// Submit a batch of outbound calls
+    Submit {
+        /// Agent ID that will handle the calls
+        #[arg(long = "agent")]
+        agent_id: String,
+
+        /// Phone number ID to dial from
+        #[arg(long = "phone-number")]
+        phone_number_id: String,
+
+        /// Path to CSV or JSON recipients file (use `-` for stdin)
+        #[arg(long)]
+        recipients: String,
+
+        /// Optional human-readable batch name
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Optional scheduled start time as a Unix timestamp
+        #[arg(long, value_name = "UNIX")]
+        scheduled_time_unix: Option<i64>,
+    },
+
+    /// List batch calls in the current workspace
+    #[command(visible_alias = "ls")]
+    List {
+        /// Page size (1-100)
+        #[arg(long)]
+        page_size: Option<u32>,
+
+        /// Pagination cursor
+        #[arg(long)]
+        cursor: Option<String>,
+
+        /// Filter by batch status
+        #[arg(long)]
+        status: Option<String>,
+
+        /// Filter by agent ID
+        #[arg(long)]
+        agent_id: Option<String>,
+    },
+
+    /// Show detail for a batch (includes per-call status)
+    #[command(visible_alias = "get")]
+    Show {
+        /// Batch ID
+        batch_id: String,
+    },
+
+    /// Cancel a batch (reversible via `phone batch retry`)
+    Cancel {
+        /// Batch ID
+        batch_id: String,
+    },
+
+    /// Retry a batch (re-dials failed/pending recipients)
+    Retry {
+        /// Batch ID
+        batch_id: String,
+    },
+
+    /// Delete a batch
+    #[command(visible_alias = "rm")]
+    Delete {
+        /// Batch ID
+        batch_id: String,
+
+        /// Confirm deletion. Required because it is irreversible.
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PhoneWhatsappAction {
+    /// Place an outbound WhatsApp voice call
+    Call {
+        /// Agent ID to handle the call
+        #[arg(long = "agent")]
+        agent_id: String,
+
+        /// WhatsApp account ID to call from
+        #[arg(long = "whatsapp-account")]
+        whatsapp_account: String,
+
+        /// Recipient phone number in E.164 format (+1...)
+        #[arg(long)]
+        recipient: String,
+    },
+
+    /// Send an outbound WhatsApp message (free-form text OR a pre-approved template)
+    Message {
+        /// Agent ID associated with the message
+        #[arg(long = "agent")]
+        agent_id: String,
+
+        /// WhatsApp account ID to send from
+        #[arg(long = "whatsapp-account")]
+        whatsapp_account: String,
+
+        /// Recipient phone number in E.164 format (+1...)
+        #[arg(long)]
+        recipient: String,
+
+        /// Free-form message text (mutually exclusive with --template)
+        #[arg(long, conflicts_with = "template")]
+        text: Option<String>,
+
+        /// Pre-approved WhatsApp template name (mutually exclusive with --text)
+        #[arg(long)]
+        template: Option<String>,
+    },
+
+    /// Manage WhatsApp accounts
+    Accounts {
+        #[command(subcommand)]
+        action: PhoneWhatsappAccountsAction,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PhoneWhatsappAccountsAction {
+    /// List WhatsApp accounts
+    #[command(visible_alias = "ls")]
+    List,
+
+    /// Show details for a WhatsApp account
+    #[command(visible_alias = "get")]
+    Show {
+        /// WhatsApp account ID
+        account_id: String,
+    },
+
+    /// PATCH a WhatsApp account with partial JSON from a file
+    Update {
+        /// WhatsApp account ID
+        account_id: String,
+
+        /// Path to a JSON file whose contents become the PATCH body
+        #[arg(long)]
+        patch: String,
+    },
+
+    /// Delete a WhatsApp account
+    #[command(visible_alias = "rm")]
+    Delete {
+        /// WhatsApp account ID
+        account_id: String,
+
+        /// Confirm deletion. Required because it is irreversible.
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 // ── History ────────────────────────────────────────────────────────────────
@@ -938,7 +1507,7 @@ pub enum PhoneAction {
 #[derive(Subcommand, Debug, Clone)]
 pub enum HistoryAction {
     /// List recent generation history
-    #[command(visible_alias = "ls")]
+    #[command(visible_alias = "ls", after_long_help = crate::help::HISTORY_LIST_HELP)]
     List {
         /// Page size (1-1000)
         #[arg(long, default_value = "20")]
@@ -1002,6 +1571,7 @@ pub enum ConfigAction {
     /// Verify the configured API key works
     Check,
     /// Interactive first-time init (writes config.toml)
+    #[command(after_long_help = crate::help::CONFIG_INIT_HELP)]
     Init {
         /// API key (omit to be prompted — non-interactive envs should pass it)
         #[arg(long)]
@@ -1014,7 +1584,469 @@ pub enum ConfigAction {
 #[derive(Subcommand, Debug, Clone)]
 pub enum SkillAction {
     /// Install skill file to all detected agent platforms
+    #[command(after_long_help = crate::help::SKILL_INSTALL_HELP)]
     Install,
     /// Check which platforms have the skill installed
     Status,
+}
+
+// ── Dialogue ───────────────────────────────────────────────────────────────
+
+#[derive(clap::Args, Debug, Clone)]
+#[command(after_long_help = crate::help::DIALOGUE_HELP)]
+pub struct DialogueArgs {
+    /// Dialogue inputs as positional triples `label:voice_id:text`, e.g.
+    /// `"Alice:v_1234:Hello there"`. Alternatively, pass a single JSON file
+    /// path and the CLI will detect it via the `.json` extension. Pass `-`
+    /// to read JSON from stdin.
+    #[arg(value_name = "LINE")]
+    pub positional: Vec<String>,
+
+    /// Path to a JSON file containing an array of `{text, voice_id}`
+    /// entries. Mutually exclusive with positional triples. Use `-` for stdin.
+    #[arg(long, value_name = "PATH", conflicts_with = "positional")]
+    pub input: Option<String>,
+
+    /// Output file path. Defaults to ./dialogue_<timestamp>.<ext>.
+    #[arg(short, long)]
+    pub output: Option<String>,
+
+    /// Model ID (default eleven_v3).
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Output format (e.g. mp3_44100_128, pcm_44100, ulaw_8000).
+    #[arg(long)]
+    pub format: Option<String>,
+
+    /// Route to the streaming endpoint (/v1/text-to-dialogue/stream).
+    #[arg(long)]
+    pub stream: bool,
+
+    /// Return per-character alignment alongside the audio.
+    #[arg(long)]
+    pub with_timestamps: bool,
+
+    /// Path to save alignment JSON when --with-timestamps is set. Defaults
+    /// to <audio>.timings.json.
+    #[arg(long, value_name = "PATH")]
+    pub save_timestamps: Option<String>,
+
+    /// Write raw audio bytes to stdout instead of a file (implies --quiet).
+    /// Only supported on the non-timestamp variants.
+    #[arg(long)]
+    pub stdout: bool,
+
+    /// Sampling seed for reproducibility (0..=4_294_967_295).
+    #[arg(long, value_parser = clap::value_parser!(u32).range(0..=4_294_967_295))]
+    pub seed: Option<u32>,
+
+    /// Stability 0.0-1.0.
+    #[arg(long)]
+    pub stability: Option<f32>,
+
+    /// Similarity boost 0.0-1.0.
+    #[arg(long)]
+    pub similarity: Option<f32>,
+
+    /// Style exaggeration 0.0-1.0.
+    #[arg(long)]
+    pub style: Option<f32>,
+
+    /// Speaker boost (default on).
+    #[arg(long)]
+    pub speaker_boost: Option<bool>,
+
+    /// ISO language code (mostly for v3; optional).
+    #[arg(long)]
+    pub language: Option<String>,
+
+    /// Text normalization mode: auto | on | off.
+    #[arg(long, value_parser = ["auto", "on", "off"])]
+    pub apply_text_normalization: Option<String>,
+
+    /// Latency optimization level (0=none, 4=max).
+    #[arg(long, value_parser = clap::value_parser!(u32).range(0..=4))]
+    pub optimize_streaming_latency: Option<u32>,
+
+    /// Zero-retention mode (enterprise only).
+    #[arg(long)]
+    pub no_logging: bool,
+}
+
+// ── Align ──────────────────────────────────────────────────────────────────
+
+#[derive(clap::Args, Debug, Clone)]
+#[command(after_long_help = crate::help::ALIGN_HELP)]
+pub struct AlignArgs {
+    /// Input audio file (the recording to align against).
+    pub audio: String,
+
+    /// Inline transcript text, OR a path to a transcript file (detected when
+    /// the value is a short single-line path that exists on disk). For
+    /// anything non-trivial prefer --transcript-file.
+    #[arg(conflicts_with = "transcript_file")]
+    pub transcript: Option<String>,
+
+    /// Path to a transcript file. Use this for transcripts with newlines or
+    /// paths containing colons.
+    #[arg(long, value_name = "PATH")]
+    pub transcript_file: Option<String>,
+
+    /// Send the audio as a spooled file — required when the file is very
+    /// large (>~50MB).
+    #[arg(long)]
+    pub enabled_spooled_file: bool,
+
+    /// Save the full JSON response (characters + words) to a file.
+    #[arg(short, long)]
+    pub output: Option<String>,
+}
+
+// ── Dubbing ────────────────────────────────────────────────────────────────
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum DubbingAction {
+    /// Create a new dubbing job from a local file or URL
+    #[command(visible_alias = "new", after_long_help = crate::help::DUBBING_CREATE_HELP)]
+    Create(DubbingCreateArgs),
+
+    /// List your dubbing jobs
+    #[command(visible_alias = "ls")]
+    List {
+        /// Filter by status (dubbing | dubbed | failed | …)
+        #[arg(long)]
+        dubbing_status: Option<String>,
+
+        /// Filter by creator: only_me | admin | workspace
+        #[arg(long)]
+        filter_by_creator: Option<String>,
+
+        /// Page size (max 100)
+        #[arg(long)]
+        page_size: Option<u32>,
+    },
+
+    /// Get a dubbing job's full status
+    #[command(visible_alias = "get")]
+    Show {
+        /// Dubbing job ID
+        dubbing_id: String,
+    },
+
+    /// Delete a dubbing job
+    #[command(visible_alias = "rm")]
+    Delete {
+        /// Dubbing job ID
+        dubbing_id: String,
+
+        /// Confirm deletion (required — deletion is irreversible).
+        #[arg(long)]
+        yes: bool,
+    },
+
+    /// Download the dubbed audio/video for a language
+    GetAudio {
+        /// Dubbing job ID
+        dubbing_id: String,
+
+        /// ISO language code (es, fr, de, …)
+        language_code: String,
+
+        /// Output file path (default: dub_<id>_<lang>.mp4)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
+    /// Download the transcript for a dubbed language in the requested format
+    GetTranscript {
+        /// Dubbing job ID
+        dubbing_id: String,
+
+        /// ISO language code
+        language_code: String,
+
+        /// Transcript format
+        #[arg(long, value_parser = ["srt", "webvtt", "json"])]
+        format: String,
+
+        /// Output file path (default: dub_<id>_<lang>.<ext>)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
+    /// Editable-dub (Studio) operations — require `--dubbing-studio=true` at create
+    Resource {
+        #[command(subcommand)]
+        action: DubbingResourceAction,
+    },
+}
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct DubbingCreateArgs {
+    /// Target language ISO code (required)
+    #[arg(long)]
+    pub target_lang: String,
+
+    /// Source media file (mutually exclusive with --source-url)
+    #[arg(long, conflicts_with = "source_url")]
+    pub file: Option<String>,
+
+    /// Publicly reachable URL to source media (mutually exclusive with --file)
+    #[arg(long, conflicts_with = "file")]
+    pub source_url: Option<String>,
+
+    /// Source language ISO code (auto-detect when omitted)
+    #[arg(long)]
+    pub source_lang: Option<String>,
+
+    /// Number of speakers in the source media (1-32)
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=32))]
+    pub num_speakers: Option<u32>,
+
+    /// Embed the ElevenLabs watermark in the output
+    #[arg(long)]
+    pub watermark: Option<bool>,
+
+    /// Start time of the clip to dub, in seconds
+    #[arg(long)]
+    pub start_time: Option<u32>,
+
+    /// End time of the clip to dub, in seconds
+    #[arg(long)]
+    pub end_time: Option<u32>,
+
+    /// Use the highest available video resolution for rendering
+    #[arg(long)]
+    pub highest_resolution: Option<bool>,
+
+    /// Drop background audio (music/SFX) from the dubbed output
+    #[arg(long)]
+    pub drop_background_audio: Option<bool>,
+
+    /// Run the profanity filter before dubbing
+    #[arg(long)]
+    pub use_profanity_filter: Option<bool>,
+
+    /// Return a Studio-editable dub instead of a one-shot render
+    #[arg(long)]
+    pub dubbing_studio: Option<bool>,
+
+    /// Disable voice cloning — use the default voice per speaker instead
+    #[arg(long)]
+    pub disable_voice_cloning: Option<bool>,
+
+    /// Dubbing mode: automatic | manual
+    #[arg(long, value_parser = ["automatic", "manual"])]
+    pub mode: Option<String>,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum DubbingResourceAction {
+    /// Re-run transcription on the source media
+    Transcribe {
+        /// Dubbing job ID
+        dubbing_id: String,
+
+        /// JSON file with request-body overrides
+        #[arg(long, value_name = "PATH")]
+        patch: Option<String>,
+    },
+
+    /// Re-run translation from the transcript
+    Translate {
+        dubbing_id: String,
+
+        #[arg(long, value_name = "PATH")]
+        patch: Option<String>,
+    },
+
+    /// Re-run the dub step
+    Dub {
+        dubbing_id: String,
+
+        #[arg(long, value_name = "PATH")]
+        patch: Option<String>,
+    },
+
+    /// Re-render the dubbed output for a target language
+    Render {
+        dubbing_id: String,
+
+        /// Target language ISO code
+        language_code: String,
+
+        #[arg(long, value_name = "PATH")]
+        patch: Option<String>,
+    },
+
+    /// Migrate legacy segment metadata to the current schema
+    MigrateSegments {
+        dubbing_id: String,
+
+        #[arg(long, value_name = "PATH")]
+        patch: Option<String>,
+    },
+}
+
+// ── Dict (pronunciation dictionaries) ──────────────────────────────────────
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum DictAction {
+    /// List pronunciation dictionaries
+    #[command(visible_alias = "ls")]
+    List {
+        /// Pagination cursor from a previous page
+        #[arg(long)]
+        cursor: Option<String>,
+
+        /// Page size (max 100)
+        #[arg(long)]
+        page_size: Option<u32>,
+
+        /// Filter by substring match on name
+        #[arg(long)]
+        search: Option<String>,
+    },
+
+    /// Upload a PLS/lexicon file as a new pronunciation dictionary
+    AddFile {
+        /// Dictionary name (shown in the library)
+        name: String,
+
+        /// Path to a PLS XML / lexicon file
+        file: String,
+
+        /// Optional description
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Workspace access mode: admin | editor | viewer
+        #[arg(long)]
+        workspace_access: Option<String>,
+    },
+
+    /// Create a new dictionary from `--rule` / `--alias-rule` flags (no file)
+    #[command(after_long_help = crate::help::DICT_ADD_RULES_HELP)]
+    AddRules {
+        /// Dictionary name
+        name: String,
+
+        /// Optional description
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Workspace access mode: admin | editor | viewer
+        #[arg(long)]
+        workspace_access: Option<String>,
+
+        /// Phoneme rule WORD:PHONEME (IPA). Repeatable.
+        #[arg(long = "rule", value_name = "WORD:PHONEME")]
+        rule: Vec<String>,
+
+        /// Alias rule WORD:ALIAS (spoken as alias). Repeatable.
+        #[arg(long = "alias-rule", value_name = "WORD:ALIAS")]
+        alias_rule: Vec<String>,
+    },
+
+    /// Show a dictionary's metadata
+    #[command(visible_alias = "get")]
+    Show {
+        /// Dictionary ID
+        id: String,
+    },
+
+    /// Update dictionary metadata or archive it
+    Update {
+        /// Dictionary ID
+        id: String,
+
+        /// New name
+        #[arg(long)]
+        name: Option<String>,
+
+        /// New description
+        #[arg(long)]
+        description: Option<String>,
+
+        /// Archive the dictionary (reversible server-side)
+        #[arg(long)]
+        archive: bool,
+    },
+
+    /// Download the rendered PLS XML for a dictionary version
+    Download {
+        /// Dictionary ID
+        id: String,
+
+        /// Version ID. Omit to use the latest version.
+        #[arg(long)]
+        version: Option<String>,
+
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+
+    /// Replace every rule in the dictionary (creates a new version)
+    SetRules {
+        /// Dictionary ID
+        id: String,
+
+        /// Phoneme rule WORD:PHONEME (IPA). Repeatable.
+        #[arg(long = "rule", value_name = "WORD:PHONEME")]
+        rule: Vec<String>,
+
+        /// Alias rule WORD:ALIAS. Repeatable.
+        #[arg(long = "alias-rule", value_name = "WORD:ALIAS")]
+        alias_rule: Vec<String>,
+
+        /// Case-sensitive matching when applying rules.
+        #[arg(long)]
+        case_sensitive: Option<bool>,
+
+        /// Only match on whole-word boundaries.
+        #[arg(long)]
+        word_boundaries: Option<bool>,
+    },
+
+    /// Append new rules to an existing dictionary (creates a new version)
+    AddRulesTo {
+        /// Dictionary ID
+        id: String,
+
+        /// Phoneme rule WORD:PHONEME. Repeatable.
+        #[arg(long = "rule", value_name = "WORD:PHONEME")]
+        rule: Vec<String>,
+
+        /// Alias rule WORD:ALIAS. Repeatable.
+        #[arg(long = "alias-rule", value_name = "WORD:ALIAS")]
+        alias_rule: Vec<String>,
+    },
+
+    /// Remove rules by their `string_to_replace` value
+    RemoveRules {
+        /// Dictionary ID
+        id: String,
+
+        /// The WORD whose rule should be dropped. Repeatable.
+        #[arg(long, value_name = "WORD")]
+        word: Vec<String>,
+    },
+}
+
+// ── Doctor ─────────────────────────────────────────────────────────────────
+
+#[derive(clap::Args, Debug, Clone)]
+pub struct DoctorArgs {
+    /// Skip a named check (repeatable). Known names:
+    /// config_file, api_key, env_shadow, api_key_scope, network,
+    /// ffmpeg, disk_write, output_dir.
+    #[arg(long = "skip", value_name = "NAME")]
+    pub skip: Vec<String>,
+
+    /// Timeout in milliseconds for the network reachability probe
+    /// and API-scope probes (default 5000).
+    #[arg(long = "timeout-ms", value_name = "MS", default_value_t = 5000)]
+    pub timeout_ms: u64,
 }

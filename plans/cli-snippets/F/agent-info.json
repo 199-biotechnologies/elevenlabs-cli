@@ -1,0 +1,16 @@
+{
+  "phone list": "List phone numbers (aliases: ls)",
+  "phone call <agent_id>": "Place an outbound call via an agent. Flags: --from-id <id>, --to <e164>.",
+  "phone batch submit": "Submit a batch of outbound calls. Required: --agent <id>, --phone-number <phone_number_id>, --recipients <path|->. CSV columns: phone_number,conversation_initiation_client_data (JSON). JSON format: array of objects. Optional: --name, --scheduled-time-unix <unix>. POST /v1/convai/batch-calling/submit.",
+  "phone batch list": "List batch calls in the workspace. Filters: --page-size, --cursor, --status, --agent-id. GET /v1/convai/batch-calling/workspace.",
+  "phone batch show <batch_id>": "Show a batch with per-call status (aliases: get). GET /v1/convai/batch-calling/{id}.",
+  "phone batch cancel <batch_id>": "Cancel a batch. Reversible via `phone batch retry` — no --yes required. POST /v1/convai/batch-calling/{id}/cancel.",
+  "phone batch retry <batch_id>": "Retry a batch (re-dials failed/pending recipients). POST /v1/convai/batch-calling/{id}/retry.",
+  "phone batch delete <batch_id> --yes": "Delete a batch (aliases: rm). --yes required (irreversible). DELETE /v1/convai/batch-calling/{id}.",
+  "phone whatsapp call": "Place an outbound WhatsApp voice call. Required: --agent <id>, --whatsapp-account <id>, --recipient <e164>. POST /v1/convai/whatsapp/outbound-call.",
+  "phone whatsapp message": "Send a WhatsApp message. Required: --agent <id>, --whatsapp-account <id>, --recipient <e164>. Supply exactly one of --text <str> or --template <name>. POST /v1/convai/whatsapp/outbound-message.",
+  "phone whatsapp accounts list": "List WhatsApp accounts (aliases: ls). GET /v1/convai/whatsapp-accounts.",
+  "phone whatsapp accounts show <id>": "Show WhatsApp account (aliases: get). GET /v1/convai/whatsapp-accounts/{id}.",
+  "phone whatsapp accounts update <id> --patch <json_file>": "PATCH a WhatsApp account with partial JSON from a file. PATCH /v1/convai/whatsapp-accounts/{id}.",
+  "phone whatsapp accounts delete <id> --yes": "Delete a WhatsApp account (aliases: rm). --yes required (irreversible). DELETE /v1/convai/whatsapp-accounts/{id}."
+}

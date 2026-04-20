@@ -3,9 +3,14 @@
 
 pub mod agent_info;
 pub mod agents;
+pub mod align;
 pub mod audio;
 pub mod config;
 pub mod conversations;
+pub mod dialogue;
+pub mod dict;
+pub mod doctor;
+pub mod dubbing;
 pub mod history;
 pub mod models;
 pub mod music;

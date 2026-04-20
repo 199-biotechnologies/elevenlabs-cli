@@ -1,0 +1,13 @@
+{
+  "dubbing create": "Create a dubbing job from a local file (--file) or URL (--source-url). Required: --target-lang. Optional: --source-lang, --num-speakers, --watermark, --start-time, --end-time, --highest-resolution, --drop-background-audio, --use-profanity-filter, --dubbing-studio, --disable-voice-cloning, --mode {automatic|manual}. Returns a dubbing_id to poll via `dubbing show`.",
+  "dubbing list": "List dubbing jobs. Filters: --dubbing-status, --filter-by-creator, --page-size.",
+  "dubbing show <dubbing_id>": "Get a dubbing job's status and language progress (aliases: get).",
+  "dubbing delete <dubbing_id> --yes": "Delete a dubbing job (aliases: rm). --yes is required.",
+  "dubbing get-audio <dubbing_id> <language_code>": "Download the dubbed audio/video bytes for a language. --output <path> to pick the filename (default dub_<id>_<lang>.mp4).",
+  "dubbing get-transcript <dubbing_id> <language_code> --format <srt|webvtt|json>": "Download the transcript in the chosen format via the new /transcript/{lang}/format/{fmt} endpoint. --output <path> to pick the filename.",
+  "dubbing resource transcribe <dubbing_id>": "Re-run transcription on a Studio-mode dub. Pass --patch <file.json> for body overrides.",
+  "dubbing resource translate <dubbing_id>": "Re-run translation for a Studio-mode dub. Pass --patch <file.json> for body overrides.",
+  "dubbing resource dub <dubbing_id>": "Re-run the dub step for a Studio-mode dub. Pass --patch <file.json> for body overrides.",
+  "dubbing resource render <dubbing_id> <language_code>": "Re-render the dubbed output for a target language. Pass --patch <file.json> for body overrides.",
+  "dubbing resource migrate-segments <dubbing_id>": "Migrate legacy segment metadata to the current schema. Pass --patch <file.json> for body overrides."
+}

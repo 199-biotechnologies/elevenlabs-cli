@@ -1,0 +1,7 @@
+# src/commands/mod.rs: no changes needed.
+# The existing line
+#
+#     pub mod agents;
+#
+# already resolves to the new `src/commands/agents/` directory
+# (via its `mod.rs`). Nothing to add or remove.

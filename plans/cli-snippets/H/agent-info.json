@@ -1,0 +1,9 @@
+{
+  "doctor": {
+    "description": "Run structured dependency + environment diagnostics (config, auth, env-var shadowing, API key scope, network reachability, ffmpeg, disk writeability, default_output_dir). JSON mode returns {checks, summary}. Exits 0 on pass/warn-only, 2 on any fail.",
+    "options": [
+      "--skip <name> (repeatable: config_file | api_key | env_shadow | api_key_scope | network | ffmpeg | disk_write | output_dir)",
+      "--timeout-ms <ms> (default 5000)"
+    ]
+  }
+}

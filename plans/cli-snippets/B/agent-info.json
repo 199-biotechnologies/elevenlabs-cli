@@ -1,0 +1,33 @@
+{
+  "dialogue [triples... | path.json | -]": {
+    "description": "Generate multi-speaker dialogue with `eleven_v3`. Accepts a JSON file (array of {text, voice_id}), colon-delimited `label:voice_id:text` positional triples, or `-` for stdin JSON. Routes to one of four endpoints based on --stream/--with-timestamps.",
+    "aliases": ["dlg"],
+    "options": [
+      "--input <path|->",
+      "--output <path>",
+      "--model <model_id> (default eleven_v3)",
+      "--format <codec_rate_bitrate>",
+      "--stream",
+      "--with-timestamps",
+      "--save-timestamps <path>",
+      "--stdout",
+      "--seed <0-4294967295>",
+      "--stability <0-1>",
+      "--similarity <0-1>",
+      "--style <0-1>",
+      "--speaker-boost <bool>",
+      "--language <iso>",
+      "--apply-text-normalization <auto|on|off>",
+      "--optimize-streaming-latency <0-4>",
+      "--no-logging"
+    ]
+  },
+  "align <audio> <transcript|path>": {
+    "description": "Forced alignment: aligns a known transcript to an audio recording, returning per-character and per-word start/end timings plus a loss value. Prefer --transcript-file for multi-line or path-like text.",
+    "options": [
+      "--transcript-file <path>",
+      "--enabled-spooled-file",
+      "--output <path>"
+    ]
+  }
+}

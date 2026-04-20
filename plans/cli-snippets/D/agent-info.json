@@ -1,0 +1,63 @@
+{
+  "dict list": {
+    "description": "List pronunciation dictionaries (IPA / alias lexicons). Filters: --cursor, --page-size, --search.",
+    "aliases": ["ls"]
+  },
+  "dict add-file <name> <file>": {
+    "description": "Upload a PLS XML / lexicon file as a new pronunciation dictionary. Multipart POST /v1/pronunciation-dictionaries/add-from-file.",
+    "options": [
+      "--description <text>",
+      "--workspace-access <admin|editor|viewer>"
+    ]
+  },
+  "dict add-rules <name>": {
+    "description": "Create a dictionary in-line from --rule WORD:PHONEME (IPA) and/or --alias-rule WORD:ALIAS flags (both repeatable). First ':' splits word from phoneme so IPA tone/length colons survive.",
+    "options": [
+      "--rule WORD:PHONEME (repeatable)",
+      "--alias-rule WORD:ALIAS (repeatable)",
+      "--description <text>",
+      "--workspace-access <admin|editor|viewer>"
+    ]
+  },
+  "dict show <id>": {
+    "description": "Show full metadata for a pronunciation dictionary.",
+    "aliases": ["get"]
+  },
+  "dict update <id>": {
+    "description": "Update dictionary metadata or archive it. PATCH /v1/pronunciation-dictionaries/{id}. Archiving is reversible server-side so no --yes is required.",
+    "options": [
+      "--name <text>",
+      "--description <text>",
+      "--archive"
+    ]
+  },
+  "dict download <id>": {
+    "description": "Download the rendered PLS XML for a dictionary version. Defaults to the latest version.",
+    "options": [
+      "--version <version_id>",
+      "--output <path>"
+    ]
+  },
+  "dict set-rules <id>": {
+    "description": "Replace every rule in the dictionary with the given set (creates a new version).",
+    "options": [
+      "--rule WORD:PHONEME (repeatable)",
+      "--alias-rule WORD:ALIAS (repeatable)",
+      "--case-sensitive <true|false>",
+      "--word-boundaries <true|false>"
+    ]
+  },
+  "dict add-rules-to <id>": {
+    "description": "Append one or more rules to an existing dictionary (creates a new version).",
+    "options": [
+      "--rule WORD:PHONEME (repeatable)",
+      "--alias-rule WORD:ALIAS (repeatable)"
+    ]
+  },
+  "dict remove-rules <id>": {
+    "description": "Remove rules by their `string_to_replace` value.",
+    "options": [
+      "--word <WORD> (repeatable)"
+    ]
+  }
+}

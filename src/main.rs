@@ -13,6 +13,7 @@ mod client;
 mod commands;
 mod config;
 mod error;
+mod help;
 mod output;
 
 use clap::Parser;
@@ -102,10 +103,14 @@ fn main() {
             Commands::Tts(args) => commands::tts::run(ctx, args).await,
             Commands::Stt(args) => commands::stt::run(ctx, *args).await,
             Commands::Sfx(args) => commands::sfx::run(ctx, args).await,
+            Commands::Dialogue(args) => commands::dialogue::run(ctx, args).await,
+            Commands::Align(args) => commands::align::run(ctx, args).await,
             Commands::Voices { action } => commands::voices::dispatch(ctx, action).await,
             Commands::Models { action } => commands::models::dispatch(ctx, action).await,
             Commands::Audio { action } => commands::audio::dispatch(ctx, action).await,
             Commands::Music { action } => commands::music::dispatch(ctx, action).await,
+            Commands::Dubbing { action } => commands::dubbing::dispatch(ctx, action).await,
+            Commands::Dict { action } => commands::dict::dispatch(ctx, action).await,
             Commands::User { action } => commands::user::dispatch(ctx, action).await,
             Commands::Agents { action } => commands::agents::dispatch(ctx, action).await,
             Commands::Conversations { action } => {
@@ -113,6 +118,16 @@ fn main() {
             }
             Commands::Phone { action } => commands::phone::dispatch(ctx, action).await,
             Commands::History { action } => commands::history::dispatch(ctx, action).await,
+            Commands::Doctor(args) => {
+                commands::doctor::run(
+                    ctx,
+                    commands::doctor::DoctorOptions {
+                        skip: args.skip,
+                        timeout_ms: args.timeout_ms,
+                    },
+                )
+                .await
+            }
         }
     });
 
