@@ -1,0 +1,8 @@
+// One-line change to src/commands/agents/mod.rs.
+//
+// OLD:
+//     AgentsAction::Delete { agent_id } => delete::run(ctx, &client, &agent_id).await,
+//
+// NEW:
+
+AgentsAction::Delete { agent_id, yes } => delete::run(ctx, &client, &agent_id, yes).await,

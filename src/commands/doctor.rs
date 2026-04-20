@@ -102,10 +102,21 @@ pub async fn run(ctx: Ctx, opts: DoctorOptions) -> Result<(), AppError> {
     output::print_success_or(ctx, &report, |r| human_print(ctx, r));
 
     if had_fail {
-        // Exit code 2 = config/auth error. We surface it by returning an
-        // AppError that maps to code 2, but the report has already been
-        // printed — so don't let AppError's usual error envelope print
-        // another time. We achieve this by exiting directly.
+        // `doctor` is the one place where we intentionally bypass the
+        // `AppError` → `main.rs` envelope flow: the diagnostic report
+        // IS the success envelope (pass/warn/fail rows with suggestions),
+        // so wrapping the "some checks failed" outcome in a second
+        // `AppError` envelope would print the same findings twice and
+        // force agents to parse two shapes for one command.
+        //
+        // The clean alternative — a dedicated `AppError::DoctorFailed`
+        // variant that `output::print_error` special-cases to print
+        // nothing — requires changes to `error.rs` and `output.rs`,
+        // which are owned by Fixer α in this phase. See
+        // plans/cli-snippets/fixes/delta/NOTES.md for the follow-up
+        // ticket. For now, the direct `exit(2)` is the pragmatic choice:
+        // code 2 = config/auth error (which is what a failing check is),
+        // and nothing is printed after the report.
         std::process::exit(2);
     }
     Ok(())
@@ -365,11 +376,19 @@ async fn check_api_key_scope(cfg: Option<&AppConfig>, timeout_ms: u64) -> Check 
 async fn check_network(timeout_ms: u64) -> Check {
     // If the caller overrode the API base URL, honour that — otherwise
     // probe the canonical ElevenLabs host.
+    //
+    // We probe `/v1/models` rather than `/` because the root returns 404
+    // pre-auth — a misleading signal to a user skimming the report. The
+    // `/v1/models` endpoint returns 200 unauthenticated, so a success
+    // here unambiguously proves DNS + TCP + TLS + HTTP routing all work
+    // without needing an API key. That also keeps this check strictly
+    // about network reachability — key validity is covered separately by
+    // `check_api_key_scope`.
     let (url_base, overridden) = match std::env::var("ELEVENLABS_API_BASE_URL") {
         Ok(v) if !v.trim().is_empty() => (v.trim().to_string(), true),
         _ => (crate::client::DEFAULT_BASE_URL.to_string(), false),
     };
-    let url = format!("{}/", url_base.trim_end_matches('/'));
+    let url = format!("{}/v1/models", url_base.trim_end_matches('/'));
 
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_millis(timeout_ms))
@@ -388,7 +407,7 @@ async fn check_network(timeout_ms: u64) -> Check {
         }
     };
 
-    match client.head(&url).send().await {
+    match client.get(&url).send().await {
         Ok(resp) => {
             let code = resp.status().as_u16();
             let note = if overridden {
@@ -396,11 +415,12 @@ async fn check_network(timeout_ms: u64) -> Check {
             } else {
                 String::new()
             };
-            // Any response (including 4xx) proves DNS + TCP + TLS work.
+            // Any response proves DNS + TCP + TLS work. 200 on /v1/models
+            // is the happy path; 4xx/5xx still indicates reachability.
             Check {
                 name: CHECK_NETWORK.into(),
                 status: CheckStatus::Pass,
-                detail: format!("HEAD {url} returned {code}{note}"),
+                detail: format!("GET {url} returned {code}{note}"),
                 suggestion: String::new(),
             }
         }

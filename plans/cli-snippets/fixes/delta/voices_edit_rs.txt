@@ -1,11 +1,24 @@
+// Full replacement for src/commands/voices/edit.rs
+// Fetches the current voice name when --name is absent so the
+// server-side `name` requirement is satisfied. Assumes
+// `AppError::InvalidInput { msg, suggestion }` struct form.
+
 //! voices edit — POST /v1/voices/{voice_id}/edit (multipart).
 //!
 //! Grounded against elevenlabs-python voices/raw_client.py `update`:
-//!   - name (optional str)
+//!   - name (REQUIRED str — the SDK types it as non-optional)
 //!   - description (optional str)
 //!   - labels (optional JSON-stringified object of string -> string)
 //!   - files (optional repeated file parts — added samples)
 //!   - remove_background_noise (optional bool)
+//!
+//! Because `name` is required server-side even when the user is only
+//! editing description/labels/samples, we pre-fetch the current voice
+//! and carry its existing name through into the multipart form. If the
+//! caller passed `--name`, their override wins. The pre-fetch is a
+//! cheap single GET against /v1/voices/{voice_id}; when it fails
+//! (auth, 404, network) we surface an actionable `InvalidInput`
+//! pointing at `--name`, so the user has a clean recovery path.
 //!
 //! Removing samples is a separate endpoint (DELETE
 //! /v1/voices/{voice_id}/samples/{sample_id}). We fan out per --remove-sample
@@ -50,16 +63,13 @@ pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: EditArgs) -> Result<
         });
     }
 
-    // 1. Remove samples first. A rename+remove in one call is ambiguous on
-    //    the server, so we always fan out removals via the dedicated
-    //    endpoint.
+    // 1. Remove samples first.
     for sample_id in &args.remove_sample {
         let path = format!("/v1/voices/{}/samples/{}", args.voice_id, sample_id);
         client.delete(&path).await?;
     }
 
-    // 2. Compose the edit multipart form (only if there's something non-sample
-    //    to change, or samples to add).
+    // 2. Compose the edit multipart form.
     let needs_edit_post = args.name.is_some()
         || args.description.is_some()
         || !args.labels.is_empty()
@@ -68,23 +78,18 @@ pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: EditArgs) -> Result<
 
     let final_voice: serde_json::Value = if needs_edit_post {
         // The /v1/voices/{id}/edit endpoint treats `name` as required.
-        // If the caller didn't pass one, pre-fetch the current voice's
-        // name so description/labels-only edits don't 422 server-side.
         let resolved_name = match &args.name {
             Some(n) => n.clone(),
             None => fetch_voice_name(client, &args.voice_id).await?,
         };
 
         let mut form = reqwest::multipart::Form::new();
-
-        // Always include name — the server requires it even for partial edits.
         form = form.text("name", resolved_name);
 
         if let Some(d) = &args.description {
             form = form.text("description", d.clone());
         }
 
-        // labels -> JSON object, serialized as a single form field per SDK.
         if !args.labels.is_empty() {
             let labels_obj = parse_labels(&args.labels)?;
             let labels_json = serde_json::to_string(&labels_obj)
@@ -152,10 +157,8 @@ pub async fn run(ctx: Ctx, client: &ElevenLabsClient, args: EditArgs) -> Result<
     Ok(())
 }
 
-/// GET /v1/voices/{voice_id} and pluck the current `name`. Transforms any
-/// failure — auth, 404, network — into an actionable `InvalidInput` that
-/// points the user at `--name`, so there is a one-shot recovery even
-/// when their key lacks `voices_read` scope.
+/// GET /v1/voices/{voice_id} and pluck the current `name`. Failure
+/// surfaces as actionable `InvalidInput` pointing at `--name`.
 async fn fetch_voice_name(client: &ElevenLabsClient, voice_id: &str) -> Result<String, AppError> {
     let path = format!("/v1/voices/{voice_id}");
     let v: serde_json::Value =
@@ -182,9 +185,6 @@ async fn fetch_voice_name(client: &ElevenLabsClient, voice_id: &str) -> Result<S
         })
 }
 
-/// Parse `--labels key=value` strings into a flat string→string map.
-/// Duplicate keys keep the last occurrence, matching the server contract
-/// (labels are a dict, not a multi-map).
 fn parse_labels(pairs: &[String]) -> Result<serde_json::Map<String, serde_json::Value>, AppError> {
     let mut out = serde_json::Map::new();
     for pair in pairs {

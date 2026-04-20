@@ -54,7 +54,7 @@ pub async fn dispatch(ctx: Ctx, action: AgentsAction) -> Result<(), AppError> {
         AgentsAction::Duplicate { agent_id, name } => {
             duplicate::run(ctx, &client, agent_id, name).await
         }
-        AgentsAction::Delete { agent_id } => delete::run(ctx, &client, &agent_id).await,
+        AgentsAction::Delete { agent_id, yes } => delete::run(ctx, &client, &agent_id, yes).await,
         AgentsAction::AddKnowledge {
             agent_id,
             name,

@@ -1,4 +1,14 @@
+// Full replacement for src/commands/agents/delete.rs
+// Drop this into the file verbatim during integration. Assumes error.rs
+// has the struct-form `AppError::InvalidInput { msg, suggestion }` from
+// Fixer α.
+
 //! `agents delete` — remove an agent. Irreversible server-side.
+//!
+//! Requires `--yes` because deletion cascades: conversations, attached
+//! knowledge-base entries, and tool-dependency edges all disappear with
+//! the agent. Agents that accidentally run `agents delete <id>` without
+//! the confirm flag would otherwise lose data they cannot re-create.
 
 use crate::client::ElevenLabsClient;
 use crate::error::AppError;
@@ -28,3 +38,12 @@ pub async fn run(
     });
     Ok(())
 }
+
+// If error.rs is still tuple-form when this lands, replace the
+// `AppError::InvalidInput { msg, suggestion }` block with:
+//
+//     return Err(AppError::InvalidInput(format!(
+//         "refusing to delete agent '{agent_id}' without --yes \
+//          (agent deletion is irreversible). Retry: \
+//          elevenlabs agents delete {agent_id} --yes"
+//     )));

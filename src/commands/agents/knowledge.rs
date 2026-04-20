@@ -15,6 +15,16 @@ use crate::client::ElevenLabsClient;
 use crate::error::AppError;
 use crate::output::{self, Ctx};
 
+/// Concrete source of the knowledge-base payload. Moves the three
+/// mutually-exclusive flags (`--url` / `--file` / `--text`) into one
+/// exhaustive enum so dispatch below is a total `match` — no `unwrap()`
+/// needed to convince the compiler exactly one flag is set.
+enum KbSource {
+    Url(String),
+    File(String),
+    Text(String),
+}
+
 pub async fn add(
     ctx: Ctx,
     client: &ElevenLabsClient,
@@ -24,60 +34,69 @@ pub async fn add(
     file: Option<String>,
     text: Option<String>,
 ) -> Result<(), AppError> {
-    let sources = [url.is_some(), file.is_some(), text.is_some()]
-        .iter()
-        .filter(|x| **x)
-        .count();
-    if sources == 0 {
-        return Err(AppError::InvalidInput(
-            "provide one of --url, --file, or --text".into(),
-        ));
-    }
-    if sources > 1 {
-        return Err(AppError::InvalidInput(
-            "provide only one of --url, --file, or --text".into(),
-        ));
-    }
+    let source = match (url, file, text) {
+        (Some(u), None, None) => KbSource::Url(u),
+        (None, Some(f), None) => KbSource::File(f),
+        (None, None, Some(t)) => KbSource::Text(t),
+        (None, None, None) => {
+            return Err(AppError::bad_input_with(
+                "provide one of --url, --file, or --text",
+                format!(
+                    "elevenlabs agents add-knowledge {agent_id} {name} --file <path>  \
+                     (or --url <https://…>, or --text \"<inline content>\")"
+                ),
+            ));
+        }
+        _ => {
+            return Err(AppError::bad_input_with(
+                "provide only one of --url, --file, or --text",
+                "pick exactly one source: --file <path> OR --url <https://…> OR --text \"<inline>\"",
+            ));
+        }
+    };
 
     // ── Step 1: create the KB document ────────────────────────────────────
-    let (doc, doc_type) = if let Some(u) = url {
-        let body = serde_json::json!({ "name": name, "url": u });
-        let v: serde_json::Value = client
-            .post_json("/v1/convai/knowledge-base/url", &body)
-            .await?;
-        (v, "url")
-    } else if let Some(t) = text {
-        let body = serde_json::json!({ "name": name, "text": t });
-        let v: serde_json::Value = client
-            .post_json("/v1/convai/knowledge-base/text", &body)
-            .await?;
-        (v, "text")
-    } else {
-        let f = file.unwrap();
-        let path = Path::new(&f);
-        if !path.exists() {
-            return Err(AppError::InvalidInput(format!(
-                "file does not exist: {}",
-                path.display()
-            )));
+    let (doc, doc_type) = match source {
+        KbSource::Url(u) => {
+            let body = serde_json::json!({ "name": name, "url": u });
+            let v: serde_json::Value = client
+                .post_json("/v1/convai/knowledge-base/url", &body)
+                .await?;
+            (v, "url")
         }
-        let bytes = crate::commands::read_file_bytes(path).await?;
-        let filename = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "file".to_string());
-        let mime = crate::commands::mime_for_path(path);
-        let file_part = reqwest::multipart::Part::bytes(bytes)
-            .file_name(filename)
-            .mime_str(&mime)
-            .map_err(|e| AppError::Http(format!("invalid mime '{mime}': {e}")))?;
-        let form = reqwest::multipart::Form::new()
-            .text("name", name.clone())
-            .part("file", file_part);
-        let v: serde_json::Value = client
-            .post_multipart_json("/v1/convai/knowledge-base/file", form)
-            .await?;
-        (v, "file")
+        KbSource::Text(t) => {
+            let body = serde_json::json!({ "name": name, "text": t });
+            let v: serde_json::Value = client
+                .post_json("/v1/convai/knowledge-base/text", &body)
+                .await?;
+            (v, "text")
+        }
+        KbSource::File(f) => {
+            let path = Path::new(&f);
+            if !path.exists() {
+                return Err(AppError::InvalidInput {
+                    msg: format!("file does not exist: {}", path.display()),
+                    suggestion: None,
+                });
+            }
+            let bytes = crate::commands::read_file_bytes(path).await?;
+            let filename = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "file".to_string());
+            let mime = crate::commands::mime_for_path(path);
+            let file_part = reqwest::multipart::Part::bytes(bytes)
+                .file_name(filename)
+                .mime_str(&mime)
+                .map_err(|e| AppError::Http(format!("invalid mime '{mime}': {e}")))?;
+            let form = reqwest::multipart::Form::new()
+                .text("name", name.clone())
+                .part("file", file_part);
+            let v: serde_json::Value = client
+                .post_multipart_json("/v1/convai/knowledge-base/file", form)
+                .await?;
+            (v, "file")
+        }
     };
 
     // The knowledge-base create endpoints return `id` and `name`. Prefer
@@ -179,7 +198,13 @@ fn retry_hint(err: AppError, doc_id: &str, stage: &str) -> AppError {
         AppError::RateLimited(m) => AppError::RateLimited(format!("{m}{hint}")),
         AppError::Http(m) => AppError::Http(format!("{m}{hint}")),
         AppError::Transient(m) => AppError::Transient(format!("{m}{hint}")),
-        AppError::InvalidInput(m) => AppError::InvalidInput(format!("{m}{hint}")),
+        AppError::InvalidInput {
+            msg: m,
+            suggestion: s,
+        } => AppError::InvalidInput {
+            msg: format!("{m}{hint}"),
+            suggestion: s,
+        },
         other => other,
     }
 }

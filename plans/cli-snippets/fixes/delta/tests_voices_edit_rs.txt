@@ -1,6 +1,15 @@
+// Full replacement for tests/voices_edit.rs
+// Adds mock-GET flows for tests that omit `--name` and two new tests
+// pinning the pre-fetch path. Do NOT apply in isolation — the new
+// voices/edit.rs (voices_edit_rs.txt) is the companion source change.
+
 //! Verifies `voices edit` handles name/description/labels via multipart
 //! (`POST /v1/voices/{id}/edit`) and dispatches `--remove-sample` to
 //! the dedicated `DELETE /v1/voices/{id}/samples/{sample_id}` endpoint.
+//!
+//! The edit endpoint treats `name` as required, so when the caller omits
+//! `--name` we pre-fetch the current voice via `GET /v1/voices/{id}` and
+//! forward its existing name. Tests below pin that behaviour.
 
 use assert_cmd::Command as AssertCmd;
 use std::io::Write;
@@ -52,6 +61,7 @@ async fn edit_renames_voice_via_multipart() {
     assert_eq!(body["data"]["voice_id"], "v_123");
 
     let reqs = mock.received_requests().await.unwrap();
+    // Only one request — the POST. When --name is passed, we do NOT fetch.
     assert_eq!(reqs.len(), 1);
     let multipart = String::from_utf8_lossy(&reqs[0].body);
     assert!(multipart.contains("name=\"name\""));
@@ -102,7 +112,6 @@ async fn edit_serialises_labels_as_json_object_form_field() {
     );
 
     let reqs = mock.received_requests().await.unwrap();
-    // GET (name lookup) + POST (edit).
     assert_eq!(reqs.len(), 2);
     let post_body = reqs
         .iter()
@@ -112,8 +121,95 @@ async fn edit_serialises_labels_as_json_object_form_field() {
     assert!(multipart.contains("name=\"labels\""));
     assert!(multipart.contains("\"accent\":\"british\""));
     assert!(multipart.contains("\"gender\":\"female\""));
-    // The fetched name is carried through into the form.
     assert!(multipart.contains("Existing Name"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_remove_sample_calls_delete_samples_endpoint() {
+    let mock = MockServer::start().await;
+    Mock::given(method("DELETE"))
+        .and(path("/v1/voices/v_x/samples/sample_a"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "ok"
+        })))
+        .mount(&mock)
+        .await;
+    Mock::given(method("DELETE"))
+        .and(path("/v1/voices/v_x/samples/sample_b"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "status": "ok"
+        })))
+        .mount(&mock)
+        .await;
+
+    let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
+    let out = bin()
+        .env("ELEVENLABS_CLI_CONFIG", &cfg)
+        .env("ELEVENLABS_API_BASE_URL", mock.uri())
+        .env_remove("ELEVENLABS_API_KEY")
+        .args([
+            "voices",
+            "edit",
+            "v_x",
+            "--remove-sample",
+            "sample_a",
+            "--remove-sample",
+            "sample_b",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(
+        out.status.success(),
+        "expected success; stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let body: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let removed = body["data"]["removed_samples"].as_array().unwrap();
+    assert_eq!(removed.len(), 2);
+    assert_eq!(removed[0], "sample_a");
+    assert_eq!(removed[1], "sample_b");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_errors_without_any_changes() {
+    let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
+    let out = bin()
+        .env("ELEVENLABS_CLI_CONFIG", &cfg)
+        .env_remove("ELEVENLABS_API_KEY")
+        .args(["voices", "edit", "v_nothing"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "edit with no changes must exit 3 (invalid_input); stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn edit_labels_bad_format_rejected() {
+    let mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/voices/v1/edit"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+        .mount(&mock)
+        .await;
+    let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
+    let out = bin()
+        .env("ELEVENLABS_CLI_CONFIG", &cfg)
+        .env("ELEVENLABS_API_BASE_URL", mock.uri())
+        .env_remove("ELEVENLABS_API_KEY")
+        .args(["voices", "edit", "v1", "--labels", "no_equals_here"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "malformed --labels must exit 3 (invalid_input); stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 /// When the user omits `--name`, we pre-fetch the current voice and forward
@@ -217,94 +313,5 @@ async fn edit_surfaces_fetch_failure_as_invalid_input() {
     assert!(
         err_txt.contains("--name"),
         "error must point the user at --name; got: {err_txt}"
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn edit_remove_sample_calls_delete_samples_endpoint() {
-    let mock = MockServer::start().await;
-    Mock::given(method("DELETE"))
-        .and(path("/v1/voices/v_x/samples/sample_a"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "status": "ok"
-        })))
-        .mount(&mock)
-        .await;
-    Mock::given(method("DELETE"))
-        .and(path("/v1/voices/v_x/samples/sample_b"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "status": "ok"
-        })))
-        .mount(&mock)
-        .await;
-
-    let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
-    let out = bin()
-        .env("ELEVENLABS_CLI_CONFIG", &cfg)
-        .env("ELEVENLABS_API_BASE_URL", mock.uri())
-        .env_remove("ELEVENLABS_API_KEY")
-        .args([
-            "voices",
-            "edit",
-            "v_x",
-            "--remove-sample",
-            "sample_a",
-            "--remove-sample",
-            "sample_b",
-        ])
-        .output()
-        .unwrap();
-
-    assert!(
-        out.status.success(),
-        "expected success; stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let body: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let removed = body["data"]["removed_samples"].as_array().unwrap();
-    assert_eq!(removed.len(), 2);
-    assert_eq!(removed[0], "sample_a");
-    assert_eq!(removed[1], "sample_b");
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn edit_errors_without_any_changes() {
-    let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
-    let out = bin()
-        .env("ELEVENLABS_CLI_CONFIG", &cfg)
-        .env_remove("ELEVENLABS_API_KEY")
-        .args(["voices", "edit", "v_nothing"])
-        .output()
-        .unwrap();
-    assert_eq!(
-        out.status.code(),
-        Some(3),
-        "edit with no changes must exit 3 (invalid_input); stderr={}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn edit_labels_bad_format_rejected() {
-    let mock = MockServer::start().await;
-    // This mock should never be reached.
-    Mock::given(method("POST"))
-        .and(path("/v1/voices/v1/edit"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
-        .mount(&mock)
-        .await;
-    let (_dir, cfg) = temp_config_with_key("sk_test_keyyyyyyyyy");
-    let out = bin()
-        .env("ELEVENLABS_CLI_CONFIG", &cfg)
-        .env("ELEVENLABS_API_BASE_URL", mock.uri())
-        .env_remove("ELEVENLABS_API_KEY")
-        .args(["voices", "edit", "v1", "--labels", "no_equals_here"])
-        .output()
-        .unwrap();
-    assert_eq!(
-        out.status.code(),
-        Some(3),
-        "malformed --labels must exit 3 (invalid_input); stderr={}",
-        String::from_utf8_lossy(&out.stderr)
     );
 }
