@@ -250,10 +250,27 @@ pub const AGENTS_CREATE_HELP: &str = "TIPS
    prompts specific; vague prompts yield vague agents.
  - Defaults: --llm gemini-3.1-flash-lite-preview (cheap, fast, good
    enough for most IVR flows), --model-id eleven_flash_v2_5 (lowest
-   TTS latency). Override --llm for reasoning-heavy use cases; override
-   --model-id for higher-fidelity voice.
- - Agent gets a voice from --voice-id, NOT --voice name — you'll want
-   to pin a voice_id you trust. Use `elevenlabs voices list` first.
+   TTS latency), --max-duration-seconds 300 (5 min — bump it for
+   anything longer than a voicemail). Override --llm for reasoning-
+   heavy use cases; override --model-id for higher-fidelity voice.
+ - Valid --model-id values (server-enforced allowlist):
+   eleven_turbo_v2, eleven_turbo_v2_5, eleven_flash_v2, eleven_flash_v2_5,
+   eleven_multilingual_v2, eleven_v3_conversational. Passing `eleven_v3`
+   is a common mistake — that's the dialogue/ttv model and agents reject
+   it with \"English Agents must use turbo or flash v2\". For expressive
+   v3 realtime use eleven_v3_conversational.
+ - --expressive-mode only takes effect with
+   --model-id eleven_v3_conversational; the server silently drops it on
+   every other model. Pass --expressive-mode on its own and the CLI
+   auto-upgrades the model for you. Requires a tier that has access to
+   expressive TTS (Creator+ at the time of writing).
+ - --llm is free-form but the Agents backend enforces its own allowlist
+   at conversation time. Known-failing example seen in the wild:
+   gemini-3.1-pro-preview (0 output tokens on the agents path even
+   though the LLM is fine elsewhere). If `conversations show` reports
+   0 output tokens, swap LLMs.
+ - Agent gets a voice from --voice-id, NOT --voice name — pin a
+   voice_id you trust. Use `elevenlabs voices list` first.
  - Attach knowledge AFTER create via `agents add-knowledge` — the
    document is PATCHed onto the agent config, not just uploaded.
 
@@ -262,16 +279,80 @@ EXAMPLES
  $ elevenlabs agents create \"Support Bot\" \\
      --system-prompt \"You are the first-line triage assistant for ACME.\"
 
- # Pinned voice + reasoning LLM
+ # Long-form interviewer with expressive v3 realtime voice
+ $ elevenlabs agents create \"Legacy Interview\" \\
+     --system-prompt \"$(cat prompts/interview.txt)\" \\
+     --voice-id JBFqnCBsd6RMkjVDRZzb \\
+     --expressive-mode --max-duration-seconds 1800
+
+ # Pinned voice + multilingual TTS
  $ elevenlabs agents create \"Research Assistant\" \\
      --system-prompt \"$(cat prompts/ra.txt)\" \\
      --voice-id 21m00Tcm4TlvDq8ikWAM \\
-     --llm gemini-3.1-pro-preview --model-id eleven_multilingual_v2
+     --llm gemini-3.1-flash-preview --model-id eleven_multilingual_v2
 
  # Attach docs after create
  $ AGENT=$(elevenlabs agents create ... --json | jq -r '.data.agent_id')
  $ elevenlabs agents add-knowledge \"$AGENT\" \"policy.pdf\" \\
      --file docs/policy.pdf";
+
+pub const AGENTS_UPDATE_HELP: &str = "TIPS
+ - --patch JSON is forwarded to PATCH /v1/convai/agents/{id} verbatim.
+   Only include the fields you want to change; everything else stays.
+ - Common paths inside conversation_config (the agent's runtime config):
+     agent.prompt.prompt             — system prompt text
+     agent.prompt.llm                — LLM id (backend has its own allowlist)
+     agent.prompt.temperature        — 0.0-1.0
+     agent.first_message             — what the agent says first
+     tts.voice_id                    — bound voice
+     tts.model_id                    — see allowlist below
+     tts.expressive_mode             — true only with eleven_v3_conversational
+     tts.stability / similarity_boost — voice settings (0.0-1.0)
+     conversation.max_duration_seconds — hard call limit in seconds
+     turn.turn_timeout               — silence before the agent prompts (s)
+ - tts.model_id allowlist (server-enforced): eleven_turbo_v2,
+   eleven_turbo_v2_5, eleven_flash_v2, eleven_flash_v2_5,
+   eleven_multilingual_v2, eleven_v3_conversational. `eleven_v3` is
+   the dialogue/ttv model and is NOT valid for agents — the CLI
+   rejects it pre-flight (exit 3).
+ - tts.expressive_mode=true is SILENTLY DROPPED unless tts.model_id is
+   eleven_v3_conversational in the same patch (or the agent already has
+   that value). The CLI pre-scans for this footgun and errors out
+   before sending the patch.
+ - turn.turn_model valid values: 'turn_v2' | 'turn_v3'. Our scaffold
+   uses turn_v2 (empirically stable in 2026-04). v3 exists but has
+   been observed swallowing turn-ends — test-dial before committing.
+ - turn.turn_eagerness: 'patient' | 'normal' | 'eager' (default
+   'normal'). 'patient' over-suppresses on speakerphones.
+ - turn.background_voice_detection=true filters room noise but in
+   real calls it has been observed muting the user's own voice on
+   speakerphones — leave it false unless a test-dial proves otherwise.
+ - turn.disable_first_message_interruptions=true prevents 'yes' /
+   'mm-hmm' backchannels from cutting off the greeting.
+ - Every PATCH is non-destructive — use `agents show` to read current
+   state, then PATCH the delta. Don't re-post the full object unless
+   you mean to reset fields.
+
+EXAMPLES
+ # Swap to expressive v3 realtime (requires Creator+ tier)
+ $ cat > patch.json <<'JSON'
+ {\"conversation_config\":{\"tts\":{
+    \"model_id\":\"eleven_v3_conversational\",
+    \"expressive_mode\":true}}}
+ JSON
+ $ elevenlabs agents update agent_abc --patch patch.json
+
+ # Extend call limit from 5 min to 30 min
+ $ echo '{\"conversation_config\":{\"conversation\":{\"max_duration_seconds\":1800}}}' > p.json
+ $ elevenlabs agents update agent_abc --patch p.json
+
+ # Change just the LLM
+ $ echo '{\"conversation_config\":{\"agent\":{\"prompt\":{\"llm\":\"gemini-3.1-flash-preview\"}}}}' > p.json
+ $ elevenlabs agents update agent_abc --patch p.json
+
+ # Rename the agent (top-level, not inside conversation_config)
+ $ echo '{\"name\":\"New Display Name\"}' > p.json
+ $ elevenlabs agents update agent_abc --patch p.json";
 
 pub const AGENTS_ADD_KNOWLEDGE_HELP: &str = "TIPS
  - Exactly ONE of --url, --file, --text is required (they are mutually
@@ -304,19 +385,27 @@ pub const PHONE_CALL_HELP: &str = "TIPS
    provider field on --from-id, so the phone number record drives the
    routing — you don't pick the provider yourself.
  - --to must be E.164 (leading +, country code, no punctuation).
- - Pass per-call variables via --dynamic-variables '{\"name\":\"Alex\"}'
-   (agent templates can interpolate {{name}}). Keep the JSON compact and
-   under 4KB.
+ - Pass per-call variables via --dynamic-variables '{\"name\":\"Alex\"}'.
+   Agent prompts can interpolate placeholders like {{name}}. Must be a
+   JSON object (not array / string). Prefix with `@` to load from a
+   file: --dynamic-variables @vars.json. Keep under ~4KB.
  - The returned conversation_id shows up in `conversations list` once
    the call connects. Poll `conversations show <id>` for the transcript.
+   If the call ended silent after one turn, inspect the transcript AND
+   the llm_usage.model_usage block — 0 output tokens with a fallback
+   model means the agent's --llm was rejected by the backend.
 
 EXAMPLES
  # Place an outbound call
  $ elevenlabs phone call agent_abc --from-id phn_123 --to +14155551212
 
- # Pass dynamic context (JSON must be single-line shell-safe)
+ # Pass dynamic context inline
  $ elevenlabs phone call agent_abc --from-id phn_123 --to +14155551212 \\
      --dynamic-variables '{\"customer\":\"Alex\",\"order_id\":\"A-8821\"}'
+
+ # Load dynamic context from a file (handy for complex templates)
+ $ elevenlabs phone call agent_abc --from-id phn_123 --to +14155551212 \\
+     --dynamic-variables @vars.json
 
  # Script: fire a call and tail its transcript
  $ CID=$(elevenlabs phone call ... --json | jq -r '.data.response.conversation_id')

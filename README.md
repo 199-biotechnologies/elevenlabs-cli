@@ -271,10 +271,18 @@ elevenlabs agents show <agent_id>        # alias: get
 elevenlabs agents create <name>
     --system-prompt "..."
     [--first-message "Hi, how can I help?"]
-    [--voice-id ID] [--language en] [--llm gemini-2.0-flash-001]
-    [--temperature 0.5] [--model-id eleven_turbo_v2]
+    [--voice-id ID] [--language en] [--llm gemini-3.1-flash-lite-preview]
+    [--temperature 0.5] [--model-id eleven_flash_v2_5]
+    [--expressive-mode] [--max-duration-seconds 300]
+elevenlabs agents update <agent_id> --patch patch.json
 elevenlabs agents delete <agent_id>      # alias: rm
 elevenlabs agents add-knowledge <agent_id> <name> (--url URL | --file PATH | --text "...")
+
+# --model-id allowlist: eleven_turbo_v2, eleven_turbo_v2_5, eleven_flash_v2,
+# eleven_flash_v2_5, eleven_multilingual_v2, eleven_v3_conversational.
+# Pass `eleven_v3` and you'll get an exit-3 error — that's the dialogue/ttv
+# model, not the realtime agent model. Use eleven_v3_conversational instead.
+# --expressive-mode auto-upgrades to eleven_v3_conversational.
 
 elevenlabs conversations list [--agent-id ID] [--page-size 30] [--cursor TOKEN]
 elevenlabs conversations show <conversation_id>
@@ -288,6 +296,7 @@ elevenlabs conversations show <conversation_id>
 ```bash
 elevenlabs phone list
 elevenlabs phone call <agent_id> --from-id <phone_number_id> --to +14155551234
+    [--dynamic-variables '{"name":"Alex"}']     # or @vars.json
 ```
 
 </details>

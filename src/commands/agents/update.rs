@@ -10,6 +10,7 @@
 use std::path::Path;
 
 use crate::client::ElevenLabsClient;
+use crate::commands::agents::agent_config::validate_patch;
 use crate::error::AppError;
 use crate::output::{self, Ctx};
 
@@ -35,6 +36,8 @@ pub async fn run(
             msg: format!("patch file {} is not valid JSON: {e}", path.display()),
             suggestion: None,
         })?;
+
+    validate_patch(&body)?;
 
     let url = format!("/v1/convai/agents/{agent_id}");
     let resp: serde_json::Value = client.patch_json(&url, &body).await?;

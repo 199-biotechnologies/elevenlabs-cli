@@ -39,7 +39,8 @@ pub async fn dispatch(ctx: Ctx, action: PhoneAction) -> Result<(), AppError> {
             agent_id,
             from_id,
             to,
-        } => call::run(ctx, &client, agent_id, from_id, to).await,
+            dynamic_variables,
+        } => call::run(ctx, &client, agent_id, from_id, to, dynamic_variables).await,
         PhoneAction::Batch { action } => dispatch_batch(ctx, &client, action).await,
         PhoneAction::Whatsapp { action } => dispatch_whatsapp(ctx, &client, action).await,
     }

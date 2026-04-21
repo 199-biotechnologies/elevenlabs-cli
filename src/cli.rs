@@ -1161,7 +1161,9 @@ pub enum AgentsAction {
         #[arg(long, default_value = "en")]
         language: String,
 
-        /// LLM to use (default gemini-3.1-flash-lite-preview)
+        /// LLM id. Default gemini-3.1-flash-lite-preview. The Agents backend
+        /// enforces its own allowlist — if conversations show 0 output tokens
+        /// the LLM fell off the list; switch to a safer default.
         #[arg(long, default_value = "gemini-3.1-flash-lite-preview")]
         llm: String,
 
@@ -1169,12 +1171,31 @@ pub enum AgentsAction {
         #[arg(long, default_value = "0.5")]
         temperature: f32,
 
-        /// TTS model ID (default eleven_flash_v2_5)
+        /// TTS model id. One of: eleven_turbo_v2, eleven_turbo_v2_5,
+        /// eleven_flash_v2, eleven_flash_v2_5, eleven_multilingual_v2,
+        /// eleven_v3_conversational. Note: `eleven_v3` (the dialogue/ttv
+        /// model) is rejected by the Agents API — use eleven_v3_conversational
+        /// for the v3 realtime model instead.
         #[arg(long, default_value = "eleven_flash_v2_5")]
         model_id: String,
+
+        /// Enable expressive v3 prosody. Only honoured with
+        /// model_id=eleven_v3_conversational; the server silently drops it on
+        /// every other model. Setting this flag without --model-id auto-
+        /// upgrades to eleven_v3_conversational. Requires a tier that has
+        /// access to expressive TTS (Creator+ at the time of writing).
+        #[arg(long)]
+        expressive_mode: bool,
+
+        /// Max call duration in seconds. Default 300 (5 min). Bump to 1800
+        /// (30 min) or higher for long-form interviews / coaching — calls hang
+        /// up hard at this limit regardless of transcript state.
+        #[arg(long, default_value = "300")]
+        max_duration_seconds: u32,
     },
 
     /// Update (PATCH) an agent's config from a JSON file
+    #[command(after_long_help = crate::help::AGENTS_UPDATE_HELP)]
     Update {
         /// Agent ID
         agent_id: String,
@@ -1336,6 +1357,12 @@ pub enum PhoneAction {
         /// E.164 number to call (+1...)
         #[arg(long)]
         to: String,
+
+        /// Per-call dynamic variables as JSON (e.g. '{"name":"Alex"}').
+        /// Agent prompts can interpolate these as {{name}}. Prefix with `@`
+        /// to load from a file: '@vars.json'. Keep under 4KB.
+        #[arg(long = "dynamic-variables", value_name = "JSON_OR_@FILE")]
+        dynamic_variables: Option<String>,
     },
 
     /// Batch outbound calls (CSV or JSON recipients)

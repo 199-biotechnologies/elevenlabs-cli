@@ -1,6 +1,7 @@
 //! Conversational AI agents — list, show, create, update, duplicate, delete,
 //! knowledge base attachment, and tool management.
 
+pub mod agent_config;
 pub mod create;
 pub mod delete;
 pub mod duplicate;
@@ -32,6 +33,8 @@ pub async fn dispatch(ctx: Ctx, action: AgentsAction) -> Result<(), AppError> {
             llm,
             temperature,
             model_id,
+            expressive_mode,
+            max_duration_seconds,
         } => {
             create::run(
                 ctx,
@@ -45,6 +48,8 @@ pub async fn dispatch(ctx: Ctx, action: AgentsAction) -> Result<(), AppError> {
                 llm,
                 temperature,
                 model_id,
+                expressive_mode,
+                max_duration_seconds,
             )
             .await
         }

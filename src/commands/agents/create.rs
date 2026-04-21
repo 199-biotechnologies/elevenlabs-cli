@@ -4,6 +4,7 @@
 //! know the entire schema to spin up a working agent.
 
 use crate::client::ElevenLabsClient;
+use crate::commands::agents::agent_config::{EXPRESSIVE_MODEL_ID, validate_agent_tts_model};
 use crate::config::AppConfig;
 use crate::error::AppError;
 use crate::output::{self, Ctx};
@@ -21,8 +22,36 @@ pub async fn run(
     llm: String,
     temperature: f32,
     model_id: String,
+    expressive_mode: bool,
+    max_duration_seconds: u32,
 ) -> Result<(), AppError> {
     let voice_id = voice_id.unwrap_or_else(|| cfg.default_voice_id());
+
+    // If the caller opted into expressive_mode but didn't override --model-id
+    // away from the CLI default, auto-pick the only model that actually
+    // supports it. This is a convenience: `--expressive-mode` on its own
+    // should just do the right thing.
+    let effective_model_id = if expressive_mode && model_id == "eleven_flash_v2_5" {
+        EXPRESSIVE_MODEL_ID.to_string()
+    } else {
+        model_id
+    };
+
+    validate_agent_tts_model(&effective_model_id)?;
+
+    if expressive_mode && effective_model_id != EXPRESSIVE_MODEL_ID {
+        return Err(AppError::bad_input_with(
+            format!(
+                "--expressive-mode is incompatible with --model-id {effective_model_id}. The \
+                 server only honours expressive_mode on {EXPRESSIVE_MODEL_ID} and silently drops \
+                 it on any other model"
+            ),
+            format!(
+                "Drop --model-id to auto-pick {EXPRESSIVE_MODEL_ID}, or pass \
+                 --model-id {EXPRESSIVE_MODEL_ID} explicitly."
+            ),
+        ));
+    }
 
     let conversation_config = serde_json::json!({
         "agent": {
@@ -45,15 +74,29 @@ pub async fn run(
         },
         "tts": {
             "voice_id": voice_id,
-            "model_id": model_id,
+            "model_id": effective_model_id,
+            "expressive_mode": expressive_mode,
             "agent_output_audio_format": "pcm_16000",
             "optimize_streaming_latency": 3,
             "stability": 0.5,
             "similarity_boost": 0.8
         },
-        "turn": { "turn_timeout": 7 },
+        "turn": {
+            // turn_v2 is the proven-working detector as of 2026-04. turn_v3
+            // exists (see ElevenLabs docs → eleven-agents changelog) but
+            // real-world dialing shows it swallows short turn-ends on some
+            // LLM configs, which sends the agent into silence. Opt in via a
+            // PATCH once you've verified it for your agent.
+            "turn_model": "turn_v2",
+            "turn_timeout": 7,
+            "turn_eagerness": "normal",
+            // Prevents tiny user backchannels ("yes", "mm-hmm") from
+            // cutting off the greeting — the single most common
+            // footgun on the first ring.
+            "disable_first_message_interruptions": true
+        },
         "conversation": {
-            "max_duration_seconds": 300,
+            "max_duration_seconds": max_duration_seconds,
             "client_events": [
                 "audio", "interruption", "user_transcript",
                 "agent_response", "agent_response_correction"

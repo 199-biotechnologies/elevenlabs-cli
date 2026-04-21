@@ -1,5 +1,7 @@
 //! Machine-readable capability manifest. Agents call this once to bootstrap.
 
+use crate::commands::agents::agent_config::{AGENT_TTS_MODEL_IDS, GOTCHAS};
+
 pub fn run() {
     let info = serde_json::json!({
         "name": env!("CARGO_PKG_NAME"),
@@ -142,8 +144,49 @@ pub fn run() {
             "user subscription": "Subscription tier, usage, and remaining characters",
             "agents list": "List conversational AI agents",
             "agents show <agent_id>": "Get agent details",
-            "agents create <name>": "Create a conversational AI agent. Defaults: --llm gemini-3.1-flash-lite-preview, --model-id eleven_flash_v2_5, --temperature 0.5, --language en.",
-            "agents update <agent_id> --patch <json_file>": "PATCH partial config (system_prompt, voice_id, tools, knowledge_base, etc.) into an existing agent without recreating it.",
+            "agents create <name>": {
+                "description": "Create a conversational AI agent. See `known_values.agent_tts_model_ids` and `gotchas.agents` before passing --model-id / --llm / --expressive-mode.",
+                "aliases": ["new"],
+                "defaults": {
+                    "--llm": "gemini-3.1-flash-lite-preview",
+                    "--model-id": "eleven_flash_v2_5",
+                    "--temperature": 0.5,
+                    "--language": "en",
+                    "--max-duration-seconds": 300
+                },
+                "options": [
+                    "--system-prompt <str> (required)",
+                    "--first-message <str>",
+                    "--voice-id <id>",
+                    "--language <iso>",
+                    "--llm <id>",
+                    "--temperature <0.0-1.0>",
+                    "--model-id <see known_values.agent_tts_model_ids>",
+                    "--expressive-mode (implies model-id eleven_v3_conversational; requires Creator+ tier)",
+                    "--max-duration-seconds <n>"
+                ]
+            },
+            "agents update <agent_id> --patch <json_file>": {
+                "description": "PATCH partial config into an existing agent. Body is forwarded verbatim to PATCH /v1/convai/agents/{id}. The CLI pre-validates conversation_config.tts.model_id and tts.expressive_mode against the known allowlist + the expressive-mode-silently-dropped footgun. See `known_values.agent_tts_model_ids` + `gotchas.agents`.",
+                "common_patch_paths": {
+                    "conversation_config.agent.prompt.prompt": "system prompt text",
+                    "conversation_config.agent.prompt.llm": "LLM id (backend has its own allowlist)",
+                    "conversation_config.agent.prompt.temperature": "0.0-1.0",
+                    "conversation_config.agent.first_message": "what the agent says first",
+                    "conversation_config.tts.voice_id": "bound voice id",
+                    "conversation_config.tts.model_id": "one of known_values.agent_tts_model_ids",
+                    "conversation_config.tts.expressive_mode": "true ONLY with model_id=eleven_v3_conversational",
+                    "conversation_config.tts.stability": "0.0-1.0",
+                    "conversation_config.tts.similarity_boost": "0.0-1.0",
+                    "conversation_config.conversation.max_duration_seconds": "hard call limit in seconds (default 300)",
+                    "conversation_config.turn.turn_model": "turn_v2 | turn_v3 (v3 = newer hybrid, better on speakerphones)",
+                    "conversation_config.turn.turn_timeout": "silence seconds before the agent prompts (default 7)",
+                    "conversation_config.turn.turn_eagerness": "patient | normal | eager — lower = more tolerant of user pauses",
+                    "conversation_config.turn.disable_first_message_interruptions": "true blocks user 'yes/uh-huh' from cutting off the greeting",
+                    "conversation_config.turn.background_voice_detection": "true filters speakerphone echo / room noise (can be too aggressive in loud rooms)",
+                    "name": "TOP-LEVEL field, not inside conversation_config — agent display name"
+                }
+            },
             "agents duplicate <agent_id>": "Clone an agent's config. Supports --name <new_name>.",
             "agents delete <agent_id>": "Delete an agent",
             "agents add-knowledge <agent_id> <name>": "Create a knowledge base document AND attach it to the agent (POSTs /v1/convai/knowledge-base/{url|file|text} then PATCHes conversation_config.agent.prompt.knowledge_base). One of --url, --file, --text is required.",
@@ -156,7 +199,14 @@ pub fn run() {
             "conversations list": "List agent conversations",
             "conversations show <conversation_id>": "Get a conversation with transcript",
             "phone list": "List phone numbers",
-            "phone call <agent_id>": "Place an outbound call via an agent",
+            "phone call <agent_id>": {
+                "description": "Place an outbound call via an agent. Dispatches to Twilio or SIP-trunk based on the provider field of --from-id.",
+                "options": [
+                    "--from-id <phone_number_id> (required)",
+                    "--to <E.164 number> (required, e.g. +14155551212)",
+                    "--dynamic-variables <JSON object or @file.json> — per-call values for {{placeholders}} in the agent prompt"
+                ]
+            },
             "phone batch submit": "Submit a batch of outbound calls. Required: --agent, --phone-number, --recipients <path|->. CSV or JSON. Optional: --name, --scheduled-time-unix.",
             "phone batch list": "List batch calls in the workspace. Filters: --page-size, --cursor, --status, --agent-id.",
             "phone batch show <batch_id>": "Show a batch with per-call status (aliases: get).",
@@ -209,6 +259,22 @@ pub fn run() {
                 "ELEVENLABS_API_BASE_URL": "Override API base URL (default https://api.elevenlabs.io)",
                 "ELEVENLABS_CLI_CONFIG": "Full path override for config.toml (tests + power users)"
             }
+        },
+        "known_values": {
+            "agent_tts_model_ids": AGENT_TTS_MODEL_IDS,
+            "agent_turn_models": ["turn_v2", "turn_v3"],
+            "agent_turn_eagerness": ["patient", "normal", "eager"]
+        },
+        "gotchas": {
+            "agents": GOTCHAS,
+            "turn_taking": [
+                "Allowed turn_model values: 'turn_v2', 'turn_v3'. This CLI's `agents create` scaffolds turn_v2 because in real-world dialing (2026-04) turn_v3 was observed swallowing short turn-ends when paired with certain LLMs — the agent heard the user but never took its turn. turn_v3 is newer and better on noise/backchannels; opt into it per-agent once you've verified the full stack on a test call.",
+                "Allowed turn_eagerness values: 'patient' | 'normal' | 'eager' (API default 'normal'). 'patient' is tempting for thoughtful users but empirically over-suppresses on speakerphone — the agent stops taking turns at all. 'normal' is the safe default; move to 'patient' only after verifying via test dial.",
+                "turn_timeout is in seconds, range 1-30. Server default behaves like ~7s. 5-10s for casual, 10-30s for thoughtful. Do not set above 15s without a test dial: users will hang up thinking the line died.",
+                "disable_first_message_interruptions = true stops tiny acknowledgements ('yes', 'mm-hmm') from cutting off the greeting. This CLI's `agents create` defaults it to true. PATCH it to true on any agent that was created through the ElevenLabs dashboard and has a greeting-interruption problem.",
+                "background_voice_detection = true filters speakerphone echo / room noise — but in real-world testing it also mutes the user's own voice on speakerphones, so the agent goes silent after they answer. Leave it FALSE by default and only enable it after a test-call verifies the user's voice still gets through.",
+                "When a call connects but the agent never takes its next turn, always inspect `conversations show <conv_id>`: llm_usage.model_usage with 0 output_tokens on the expected LLM = the --llm was rejected by the backend and a fallback was tried that never completed. Swap the LLM first, not the turn settings."
+            ]
         },
         "auto_json_when_piped": true,
         "requires_api_key": true,
