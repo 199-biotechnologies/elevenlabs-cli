@@ -271,6 +271,11 @@ pub const AGENTS_CREATE_HELP: &str = "TIPS
    0 output tokens, swap LLMs.
  - Agent gets a voice from --voice-id, NOT --voice name — pin a
    voice_id you trust. Use `elevenlabs voices list` first.
+ - --voicemail-detection is OFF by default because it only helps
+   outbound phone agents. For ANY agent you'll dial out to, turn it on
+   — otherwise the greeting gets recorded onto the callee's answer-
+   phone. Pass --voicemail-message to leave a message instead of
+   hanging up silently.
  - Attach knowledge AFTER create via `agents add-knowledge` — the
    document is PATCHed onto the agent config, not just uploaded.
 
@@ -280,10 +285,12 @@ EXAMPLES
      --system-prompt \"You are the first-line triage assistant for ACME.\"
 
  # Long-form interviewer with expressive v3 realtime voice
+ # + voicemail detection (hangs up on answerphones)
  $ elevenlabs agents create \"Legacy Interview\" \\
      --system-prompt \"$(cat prompts/interview.txt)\" \\
      --voice-id JBFqnCBsd6RMkjVDRZzb \\
-     --expressive-mode --max-duration-seconds 1800
+     --expressive-mode --max-duration-seconds 1800 \\
+     --voicemail-detection
 
  # Pinned voice + multilingual TTS
  $ elevenlabs agents create \"Research Assistant\" \\

@@ -35,6 +35,8 @@ pub async fn dispatch(ctx: Ctx, action: AgentsAction) -> Result<(), AppError> {
             model_id,
             expressive_mode,
             max_duration_seconds,
+            voicemail_detection,
+            voicemail_message,
         } => {
             create::run(
                 ctx,
@@ -50,6 +52,8 @@ pub async fn dispatch(ctx: Ctx, action: AgentsAction) -> Result<(), AppError> {
                 model_id,
                 expressive_mode,
                 max_duration_seconds,
+                voicemail_detection,
+                voicemail_message,
             )
             .await
         }

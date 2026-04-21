@@ -163,7 +163,9 @@ pub fn run() {
                     "--temperature <0.0-1.0>",
                     "--model-id <see known_values.agent_tts_model_ids>",
                     "--expressive-mode (implies model-id eleven_v3_conversational; requires Creator+ tier)",
-                    "--max-duration-seconds <n>"
+                    "--max-duration-seconds <n>",
+                    "--voicemail-detection (registers the voicemail_detection system tool; hangs up on answerphones)",
+                    "--voicemail-message <text> (implies --voicemail-detection; leaves this message instead of hanging up)"
                 ]
             },
             "agents update <agent_id> --patch <json_file>": {
@@ -184,6 +186,7 @@ pub fn run() {
                     "conversation_config.turn.turn_eagerness": "patient | normal | eager — lower = more tolerant of user pauses",
                     "conversation_config.turn.disable_first_message_interruptions": "true blocks user 'yes/uh-huh' from cutting off the greeting",
                     "conversation_config.turn.background_voice_detection": "true filters speakerphone echo / room noise (can be too aggressive in loud rooms)",
+                    "conversation_config.agent.prompt.tools[]": "append {type:'system', name:'voicemail_detection', description:''} to enable voicemail hang-up; add voicemail_message:'...' on that entry to leave a message instead",
                     "name": "TOP-LEVEL field, not inside conversation_config — agent display name"
                 }
             },
@@ -274,6 +277,10 @@ pub fn run() {
                 "disable_first_message_interruptions = true stops tiny acknowledgements ('yes', 'mm-hmm') from cutting off the greeting. This CLI's `agents create` defaults it to true. PATCH it to true on any agent that was created through the ElevenLabs dashboard and has a greeting-interruption problem.",
                 "background_voice_detection = true filters speakerphone echo / room noise — but in real-world testing it also mutes the user's own voice on speakerphones, so the agent goes silent after they answer. Leave it FALSE by default and only enable it after a test-call verifies the user's voice still gets through.",
                 "When a call connects but the agent never takes its next turn, always inspect `conversations show <conv_id>`: llm_usage.model_usage with 0 output_tokens on the expected LLM = the --llm was rejected by the backend and a fallback was tried that never completed. Swap the LLM first, not the turn settings."
+            ],
+            "outbound_calls": [
+                "Voicemail detection is OFF by default on new agents. For outbound phone agents you almost always want it ON — otherwise the agent's opening greeting gets recorded onto the callee's answerphone. Pass --voicemail-detection on `agents create`, or PATCH an existing agent by appending {type:'system', name:'voicemail_detection', description:''} to conversation_config.agent.prompt.tools. Add voicemail_message:'...' to leave a message instead of hanging up.",
+                "Dynamic variables are per-CALL, not per-agent. Set them on `phone call --dynamic-variables '{...}'`, not in conversation_config — that block is for schema placeholders only. Agent prompts reference them as {{name}}, {{order_id}}, etc."
             ]
         },
         "auto_json_when_piped": true,

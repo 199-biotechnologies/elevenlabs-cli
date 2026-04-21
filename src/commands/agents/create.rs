@@ -24,7 +24,13 @@ pub async fn run(
     model_id: String,
     expressive_mode: bool,
     max_duration_seconds: u32,
+    voicemail_detection: bool,
+    voicemail_message: Option<String>,
 ) -> Result<(), AppError> {
+    // Passing --voicemail-message implies --voicemail-detection; agents
+    // don't need to remember both. The reverse is not implied — enabling
+    // detection without a message defaults to hanging up on voicemail.
+    let voicemail_detection = voicemail_detection || voicemail_message.is_some();
     let voice_id = voice_id.unwrap_or_else(|| cfg.default_voice_id());
 
     // If the caller opted into expressive_mode but didn't override --model-id
@@ -53,13 +59,29 @@ pub async fn run(
         ));
     }
 
+    // Build the system-tools list. end_call is always present; voicemail
+    // detection is opt-in because it's only useful on outbound phone
+    // agents — web-widget agents that answer voicemail systems are rare.
+    let mut tools = vec![serde_json::json!(
+        {"type": "system", "name": "end_call", "description": ""}
+    )];
+    if voicemail_detection {
+        let mut vmt = serde_json::json!(
+            {"type": "system", "name": "voicemail_detection", "description": ""}
+        );
+        if let Some(msg) = voicemail_message.as_ref() {
+            vmt["voicemail_message"] = serde_json::Value::String(msg.clone());
+        }
+        tools.push(vmt);
+    }
+
     let conversation_config = serde_json::json!({
         "agent": {
             "language": language,
             "prompt": {
                 "prompt": system_prompt,
                 "llm": llm,
-                "tools": [{"type": "system", "name": "end_call", "description": ""}],
+                "tools": tools,
                 "knowledge_base": [],
                 "temperature": temperature,
             },

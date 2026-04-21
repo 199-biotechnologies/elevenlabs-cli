@@ -3,6 +3,15 @@
 All notable changes to `elevenlabs-cli` are listed here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org).
 
+## [0.2.2] — 2026-04-21
+
+### Added — outbound-call ergonomics
+
+- `elevenlabs agents create --voicemail-detection` registers the `voicemail_detection` system tool so the agent hangs up cleanly on answerphones instead of recording its opening over someone's voicemail. Default OFF so inbound/web-widget agents aren't affected.
+- `elevenlabs agents create --voicemail-message <text>` — implies `--voicemail-detection` and leaves the specified message on voicemail instead of hanging up. Supports `{{placeholder}}` interpolation from `--dynamic-variables` on the call.
+- `agent-info` gains a new `gotchas.outbound_calls` block that explains: (a) voicemail detection is OFF by default and almost always wanted for outbound phone agents, and (b) dynamic variables are per-call (set on `phone call`), not per-agent.
+- `agents update --help` lists the `conversation_config.agent.prompt.tools[]` path so contributors know how to enable voicemail detection on an existing agent.
+
 ## [0.2.1] — 2026-04-21
 
 ### Added — surfaces agents kept tripping over

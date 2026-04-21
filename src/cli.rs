@@ -1192,6 +1192,20 @@ pub enum AgentsAction {
         /// up hard at this limit regardless of transcript state.
         #[arg(long, default_value = "300")]
         max_duration_seconds: u32,
+
+        /// Register the `voicemail_detection` system tool. Almost always
+        /// what you want for outbound phone agents: if the callee's line
+        /// goes to voicemail, the agent hangs up cleanly rather than
+        /// recording its opening over their answerphone. Default OFF so
+        /// inbound/web-widget agents aren't affected.
+        #[arg(long)]
+        voicemail_detection: bool,
+
+        /// If set, leave this message on voicemail instead of hanging up.
+        /// Implies --voicemail-detection. Supports {{placeholder}}
+        /// interpolation from --dynamic-variables on the call.
+        #[arg(long, value_name = "TEXT")]
+        voicemail_message: Option<String>,
     },
 
     /// Update (PATCH) an agent's config from a JSON file
