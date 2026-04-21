@@ -1,4 +1,13 @@
-# ElevenLabs CLI — spec audit (v0.2.2)
+# ElevenLabs CLI — spec audit (historical, ran against v0.2.2)
+
+> **HISTORICAL — read for context, not current guidance.** This audit was
+> run by Codex (gpt-5.4, xhigh) against v0.2.2 on 2026-04-21. Most of its
+> findings shipped in v0.3.0 and v0.3.1. Some specifics in this document
+> (e.g. suggesting `--client-data` on `agents signed-url`, or claiming
+> `call_recording_enabled` exists on both Twilio and SIP outbound bodies)
+> are incorrect and were caught by the follow-up v0.3.0 review at
+> [`post-ship-review-v0.3.0.md`](post-ship-review-v0.3.0.md). Use the
+> follow-up review + CHANGELOG for the current state.
 
 Excluded from ranking as intentionally out of scope per `README.md`/`CLAUDE.md`: agent-testing, branches/drafts/deployments, audio-native, studio, workspace/service accounts, MCP/secrets/settings/dashboard/billing surfaces.
 

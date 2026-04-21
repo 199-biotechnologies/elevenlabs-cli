@@ -153,11 +153,11 @@ pub fn run() {
                 "description": "Create a conversational AI agent. See `known_values.agent_tts_model_ids` and `gotchas.agents` before passing --model-id / --llm / --expressive-mode.",
                 "aliases": ["new"],
                 "defaults": {
-                    "--llm": "gemini-3.1-flash-lite-preview",
+                    "--llm": "gemini-2.5-flash",
                     "--model-id": "eleven_flash_v2_5",
                     "--temperature": 0.5,
                     "--language": "en",
-                    "--max-duration-seconds": 300
+                    "--max-duration-seconds": 600
                 },
                 "options": [
                     "--system-prompt <str> (required)",
@@ -167,7 +167,7 @@ pub fn run() {
                     "--llm <id>",
                     "--temperature <0.0-1.0>",
                     "--model-id <see known_values.agent_tts_model_ids>",
-                    "--expressive-mode (implies model-id eleven_v3_conversational; requires Creator+ tier)",
+                    "--expressive-mode (implies model-id eleven_v3_conversational; requires a plan with expressive TTS — upgrade if the API returns 'Expressive TTS is not allowed')",
                     "--max-duration-seconds <n>",
                     "--voicemail-detection (registers the voicemail_detection system tool; hangs up on answerphones)",
                     "--voicemail-message <text> (implies --voicemail-detection; leaves this message instead of hanging up)"
@@ -185,7 +185,7 @@ pub fn run() {
                     "conversation_config.tts.expressive_mode": "true ONLY with model_id=eleven_v3_conversational",
                     "conversation_config.tts.stability": "0.0-1.0",
                     "conversation_config.tts.similarity_boost": "0.0-1.0",
-                    "conversation_config.conversation.max_duration_seconds": "hard call limit in seconds (default 300)",
+                    "conversation_config.conversation.max_duration_seconds": "hard call limit in seconds (spec default 600)",
                     "conversation_config.turn.turn_model": "turn_v2 | turn_v3 (EMPIRICAL — enforced by the live API but absent from the current OpenAPI spec; treat as unofficial)",
                     "conversation_config.turn.turn_timeout": "silence seconds before the agent prompts (default 7, range 1-30)",
                     "conversation_config.turn.turn_eagerness": "patient | normal | eager (default normal)",

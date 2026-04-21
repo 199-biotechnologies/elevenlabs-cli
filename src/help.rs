@@ -248,27 +248,30 @@ EXAMPLES
 pub const AGENTS_CREATE_HELP: &str = "TIPS
  - --system-prompt is REQUIRED — there is no interactive fallback. Keep
    prompts specific; vague prompts yield vague agents.
- - Defaults: --llm gemini-3.1-flash-lite-preview (cheap, fast, good
-   enough for most IVR flows), --model-id eleven_flash_v2_5 (lowest
-   TTS latency), --max-duration-seconds 300 (5 min — bump it for
-   anything longer than a voicemail). Override --llm for reasoning-
-   heavy use cases; override --model-id for higher-fidelity voice.
+ - Defaults: --llm gemini-2.5-flash (spec default on
+   PromptAgentAPIModel.llm), --model-id eleven_flash_v2_5 (lowest
+   TTS latency, current agent recommendation), --max-duration-seconds
+   600 (10 min, matching the spec default). Override --llm for
+   reasoning-heavy use cases; override --model-id for higher-fidelity
+   voice; bump --max-duration-seconds for long-form interviews.
  - Valid --model-id values (server-enforced allowlist):
-   eleven_turbo_v2, eleven_turbo_v2_5, eleven_flash_v2, eleven_flash_v2_5,
-   eleven_multilingual_v2, eleven_v3_conversational. Passing `eleven_v3`
-   is a common mistake — that's the dialogue/ttv model and agents reject
-   it with \"English Agents must use turbo or flash v2\". For expressive
-   v3 realtime use eleven_v3_conversational.
+   eleven_flash_v2_5 (recommended), eleven_flash_v2, eleven_multilingual_v2,
+   eleven_v3_conversational, eleven_turbo_v2_5 (DEPRECATED —
+   replaced by flash_v2_5), eleven_turbo_v2 (DEPRECATED — replaced by
+   flash_v2). Passing `eleven_v3` is a common mistake — that's the
+   dialogue/ttv model and agents reject it with \"English Agents must
+   use turbo or flash v2\". For expressive v3 realtime use
+   eleven_v3_conversational.
  - --expressive-mode only takes effect with
    --model-id eleven_v3_conversational; the server silently drops it on
    every other model. Pass --expressive-mode on its own and the CLI
-   auto-upgrades the model for you. Requires a tier that has access to
-   expressive TTS (Creator+ at the time of writing).
+   auto-upgrades the model for you. Requires a plan with access to
+   expressive TTS — if the API returns \"Expressive TTS is not allowed\",
+   upgrade the plan.
  - --llm is free-form but the Agents backend enforces its own allowlist
-   at conversation time. Known-failing example seen in the wild:
-   gemini-3.1-pro-preview (0 output tokens on the agents path even
-   though the LLM is fine elsewhere). If `conversations show` reports
-   0 output tokens, swap LLMs.
+   at conversation time — discover it with `elevenlabs agents llms`.
+   If `conversations show` reports 0 output tokens on the chosen LLM,
+   the backend rejected it and fell back silently — swap LLMs.
  - Agent gets a voice from --voice-id, NOT --voice name — pin a
    voice_id you trust. Use `elevenlabs voices list` first.
  - --voicemail-detection is OFF by default because it only helps
@@ -296,7 +299,7 @@ EXAMPLES
  $ elevenlabs agents create \"Research Assistant\" \\
      --system-prompt \"$(cat prompts/ra.txt)\" \\
      --voice-id 21m00Tcm4TlvDq8ikWAM \\
-     --llm gemini-3.1-flash-preview --model-id eleven_multilingual_v2
+     --llm gemini-2.5-flash --model-id eleven_multilingual_v2
 
  # Attach docs after create
  $ AGENT=$(elevenlabs agents create ... --json | jq -r '.data.agent_id')
@@ -349,7 +352,7 @@ pub const AGENTS_UPDATE_HELP: &str = "TIPS
    you mean to reset fields.
 
 EXAMPLES
- # Swap to expressive v3 realtime (requires Creator+ tier)
+ # Swap to expressive v3 realtime (requires a plan with expressive TTS)
  $ cat > patch.json <<'JSON'
  {\"conversation_config\":{\"tts\":{
     \"model_id\":\"eleven_v3_conversational\",
@@ -362,7 +365,7 @@ EXAMPLES
  $ elevenlabs agents update agent_abc --patch p.json
 
  # Change just the LLM
- $ echo '{\"conversation_config\":{\"agent\":{\"prompt\":{\"llm\":\"gemini-3.1-flash-preview\"}}}}' > p.json
+ $ echo '{\"conversation_config\":{\"agent\":{\"prompt\":{\"llm\":\"gemini-2.5-flash\"}}}}' > p.json
  $ elevenlabs agents update agent_abc --patch p.json
 
  # Rename the agent (top-level, not inside conversation_config)

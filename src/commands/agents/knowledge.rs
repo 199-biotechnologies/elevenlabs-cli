@@ -295,35 +295,71 @@ pub async fn search(
     let resp: serde_json::Value = client
         .get_json_with_query("/v1/convai/knowledge-base/search", &params)
         .await?;
+    // Response shape per OpenAPI (KnowledgeBaseContentSearchResponseModel):
+    //   { results: [{ document: {id, name, type, ...},
+    //                 search_snippet: [{value, is_hit}],
+    //                 score }],
+    //     next_cursor: str | null }
     output::print_success_or(ctx, &resp, |v| {
         use owo_colors::OwoColorize;
         let hits = v
             .get("results")
             .and_then(|r| r.as_array())
             .cloned()
-            .or_else(|| v.as_array().cloned())
             .unwrap_or_default();
         if hits.is_empty() {
             println!("(no matches for {:?})", query);
             return;
         }
         for (i, hit) in hits.iter().enumerate() {
-            let doc = hit
-                .get("document_name")
-                .or_else(|| hit.get("document_id"))
+            let doc = hit.get("document");
+            let doc_name = doc
+                .and_then(|d| d.get("name"))
                 .and_then(|x| x.as_str())
                 .unwrap_or("");
+            let doc_id = doc
+                .and_then(|d| d.get("id"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            let doc_type = doc
+                .and_then(|d| d.get("type"))
+                .and_then(|x| x.as_str())
+                .unwrap_or("");
+            let score = hit.get("score").and_then(|x| x.as_f64());
+            // search_snippet is an array of {value, is_hit} segments; render
+            // matching segments bold so the hit region is obvious.
             let snippet = hit
-                .get("content")
-                .or_else(|| hit.get("chunk"))
-                .and_then(|x| x.as_str())
-                .unwrap_or("");
+                .get("search_snippet")
+                .and_then(|s| s.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|seg| {
+                            let val = seg.get("value").and_then(|x| x.as_str()).unwrap_or("");
+                            let hit = seg.get("is_hit").and_then(|x| x.as_bool()).unwrap_or(false);
+                            if hit {
+                                val.bold().to_string()
+                            } else {
+                                val.to_string()
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("")
+                })
+                .unwrap_or_default();
+            let score_tag = score
+                .map(|s| format!("  ({s:.3})").dimmed().to_string())
+                .unwrap_or_default();
             println!(
-                "{} {}  {}",
+                "{} {} {} {}{}",
                 format!("{:>2}.", i + 1).dimmed(),
-                doc.bold(),
-                snippet
+                doc_name.bold(),
+                format!("[{doc_type} {doc_id}]").dimmed(),
+                snippet,
+                score_tag,
             );
+        }
+        if let Some(next) = v.get("next_cursor").and_then(|x| x.as_str()) {
+            println!("{} next page cursor: {}", "more:".dimmed(), next);
         }
     });
     Ok(())

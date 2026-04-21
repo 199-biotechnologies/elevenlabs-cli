@@ -24,16 +24,18 @@
 use crate::error::AppError;
 
 /// Every `conversation_config.tts.model_id` the Agents backend currently
-/// accepts. Sourced from the 400 response body on invalid input:
-/// "Input should be 'eleven_turbo_v2', 'eleven_turbo_v2_5', 'eleven_flash_v2',
-///  'eleven_flash_v2_5', 'eleven_multilingual_v2', 'eleven_v3_conversational'."
+/// accepts. Sourced from the 400 response body on invalid input and
+/// cross-checked against `TTSConversationalConfig-Input.model_id` in the
+/// vendored OpenAPI spec. `eleven_flash_v2_5` is the current agent
+/// recommendation; the `eleven_turbo_v2*` entries are still accepted but
+/// marked deprecated in the public models docs.
 pub const AGENT_TTS_MODEL_IDS: &[&str] = &[
-    "eleven_turbo_v2",
-    "eleven_turbo_v2_5",
-    "eleven_flash_v2",
     "eleven_flash_v2_5",
+    "eleven_flash_v2",
     "eleven_multilingual_v2",
     "eleven_v3_conversational",
+    "eleven_turbo_v2_5",
+    "eleven_turbo_v2",
 ];
 
 /// The one and only model that actually honours `expressive_mode`.
@@ -41,17 +43,19 @@ pub const EXPRESSIVE_MODEL_ID: &str = "eleven_v3_conversational";
 
 /// Human-readable pitfall strings, shared between `--help` and `agent-info`.
 pub const GOTCHAS: &[&str] = &[
-    "Agent TTS model_id must be one of eleven_turbo_v2, eleven_turbo_v2_5, eleven_flash_v2, \
-     eleven_flash_v2_5, eleven_multilingual_v2, or eleven_v3_conversational. \
-     `eleven_v3` (without `_conversational`) is the dialogue/ttv model and agents reject it with \
+    "Agent TTS model_id allowlist: eleven_flash_v2_5 (recommended), eleven_flash_v2, \
+     eleven_multilingual_v2, eleven_v3_conversational. eleven_turbo_v2_5 and eleven_turbo_v2 \
+     are still accepted but DEPRECATED per the public models docs — prefer the flash equivalents. \
+     `eleven_v3` (no `_conversational`) is the dialogue/ttv model and agents reject it with \
      'English Agents must use turbo or flash v2'.",
     "expressive_mode only takes effect with model_id=eleven_v3_conversational. With any other \
      model the server silently drops the flag — the PATCH succeeds but expressive_mode stays false.",
-    "--llm accepts any string but the Agents backend has its own allowlist. If an accepted \
-     LLM fails to generate at conversation time (0 output tokens in conversations show), pick \
-     a different one — gemini-3.1-flash-lite-preview is the safest default.",
-    "Default max_duration_seconds is 300 (5 min). For anything longer than a voicemail you \
-     almost certainly want --max-duration-seconds 1800 (30 min) or higher.",
+    "--llm accepts any string but the Agents backend has its own allowlist. Discover the live list \
+     with `elevenlabs agents llms`. The OpenAPI spec default is `gemini-2.5-flash`. If an accepted \
+     LLM fails to generate at conversation time (0 output tokens in `conversations show`), swap LLMs.",
+    "Spec default for conversation.max_duration_seconds is 600 (10 min). This CLI's \
+     `agents create` defaults to the same value. Bump to 1800 (30 min) or higher for long-form \
+     interviews / coaching — calls hang up hard at this limit regardless of transcript state.",
 ];
 
 /// Reject a user-supplied agent `model_id` if we know the server will.

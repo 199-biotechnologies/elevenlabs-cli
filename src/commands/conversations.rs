@@ -106,7 +106,7 @@ async fn audio(
     output: Option<String>,
 ) -> Result<(), AppError> {
     let path = format!("/v1/convai/conversations/{conversation_id}/audio");
-    let bytes = get_bytes(client, &path).await?;
+    let bytes = client.get_bytes(&path).await?;
     let out_path: PathBuf = match output {
         Some(p) => PathBuf::from(p),
         None => PathBuf::from(format!("conv_{conversation_id}.mp3")),
@@ -131,26 +131,4 @@ async fn audio(
         );
     });
     Ok(())
-}
-
-/// GET audio bytes. Drives `reqwest` directly because the shared client only
-/// has JSON-returning GET helpers. Errors route through `check_status`-style
-/// logic inline — keep it small since we only need one shape here.
-async fn get_bytes(client: &ElevenLabsClient, path: &str) -> Result<bytes::Bytes, AppError> {
-    let resp = client.http.get(client.url(path)).send().await?;
-    let status = resp.status();
-    if !status.is_success() {
-        let code = status.as_u16();
-        let body = resp.text().await.unwrap_or_default();
-        let message = crate::client::redact_secrets(&body);
-        return Err(match code {
-            401 | 403 => AppError::AuthFailed(message),
-            429 => AppError::RateLimited(message),
-            _ => AppError::Api {
-                status: code,
-                message,
-            },
-        });
-    }
-    Ok(resp.bytes().await?)
 }

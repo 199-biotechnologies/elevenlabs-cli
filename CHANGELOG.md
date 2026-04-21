@@ -3,6 +3,92 @@
 All notable changes to `elevenlabs-cli` are listed here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning is [SemVer](https://semver.org).
 
+## [0.3.1] — 2026-04-21
+
+Post-ship review of v0.3.0 (Codex, gpt-5.4 xhigh) caught six real bugs +
+a batch of stale defaults. All fixed here. Review report vendored at
+`docs/reference/post-ship-review-v0.3.0.md`.
+
+### Fixed — response-shape bugs in the new v0.3.0 commands
+
+- `agents llms` now parses the real response shape. The spec's
+  `LLMListResponseModel` returns `llms[].llm` (plus `max_tokens_limit`,
+  `max_context_limit`, `supports_image_input`, `supports_document_input`,
+  `supports_parallel_tool_calls`, `available_reasoning_efforts`,
+  `deprecation_info`). The initial wiring looked for `llm_id` / `id` /
+  `display_name` / `provider` — which don't exist — so the human-mode
+  table was rendering blank IDs. JSON mode always worked.
+- `agents knowledge search` now parses the real response shape. The
+  spec's `KnowledgeBaseContentSearchResult` returns
+  `document.{id,name,type}` + `search_snippet[].{value,is_hit}` + `score`.
+  The initial wiring looked for flat `document_name` / `document_id` +
+  `content` / `chunk` — fields that don't exist. TTY output now renders
+  doc name + type + id, bolds the matching snippet segments, and shows
+  the relevance score.
+
+### Fixed — outbound-call body drift
+
+- **P0** `phone call --dynamic-variables` no longer replaces the full
+  `dynamic_variables` object when passed alongside `--client-data`.
+  Previous behaviour dropped any keys present in
+  `--client-data.dynamic_variables` that weren't also in
+  `--dynamic-variables`. Now deep-merges (incoming wins on key clash,
+  unrelated keys preserved). Help text promised a merge — now the code
+  matches.
+- **P0** `phone call --record` is now rejected client-side on SIP-trunk
+  numbers. The OpenAPI spec only defines `call_recording_enabled` on
+  the Twilio outbound-call body; SIP silently dropped the field. Exit 3
+  with a concrete suggestion when the provider isn't Twilio.
+- `phone call --ringing-timeout-secs` is now range-validated in clap
+  (1-999, matching `TelephonyCallConfig.ringing_timeout_secs` in the
+  spec). Bad values fail fast with an exit-3 clap error instead of a
+  422 at the server.
+
+### Fixed — shared client plumbing
+
+- `conversations audio` now goes through a new `ElevenLabsClient::get_bytes`
+  method that reuses `check_status` — so large error pages, proxy HTML,
+  and `detail.message`-style bodies get the same short, secret-redacted
+  error shape every other command produces. v0.3.0's private helper in
+  `conversations.rs` had drifted from `check_status` by skipping the
+  message extractor.
+
+### Changed — defaults now track the OpenAPI spec + public docs
+
+- `agents create --llm` default: `gemini-3.1-flash-lite-preview` →
+  `gemini-2.5-flash`. Matches `PromptAgentAPIModel.llm` default in the
+  current OpenAPI spec and the April 2026 ElevenLabs blog post naming
+  Gemini 2.5 Flash as the recommended default for Conversational AI.
+- `agents create --max-duration-seconds` default: 300 → 600. Matches
+  `ConversationConfig.max_duration_seconds` default in the OpenAPI spec.
+- The `AGENT_TTS_MODEL_IDS` allowlist is unchanged (server-enforced)
+  but re-ordered with `eleven_flash_v2_5` first and
+  `eleven_turbo_v2{_5,}` at the end, now marked **DEPRECATED** in the
+  gotchas / help copy per the public models docs.
+- Two stale `gemini-3.1-flash-preview` help examples replaced with
+  `gemini-2.5-flash` (the preview model isn't in the `LLM` enum).
+
+### Changed — doc copy hygiene
+
+- Dropped "Creator+ at the time of writing" tier language from
+  `agents create --help`, `agents update --help`, `agent-info`, and
+  `cli.rs`. The expressive-mode docs don't name a tier and tiers have
+  shifted; we now just say "requires a plan with expressive TTS — if
+  the API returns 'Expressive TTS is not allowed', upgrade".
+- README: homebrew tap switched from the deprecated
+  `199-biotechnologies/tap` to `paperfoot/tap`. The "grounded against
+  elevenlabs-js v2.43 SDK" statement is replaced by a pointer to the
+  vendored `docs/reference/openapi.elevenlabs.json` snapshot.
+- README command summary now lists every v0.3.0 addition (`agents llms`,
+  `agents signed-url`, `agents knowledge {list,search,refresh}`,
+  `conversations audio`, and the new `phone call` override flags).
+- `docs/reference/spec-audit-v0.2.2.md` renamed to
+  `spec-audit-pre-v0.3.0.md` with a banner flagging it as historical
+  and pointing at the v0.3.0 post-ship review.
+- `docs/reference/README.md` fixed: removed a broken reference to a
+  non-existent `audit-prompt.md`; added a "Historical audits" section
+  linking the two captured reports.
+
 ## [0.3.0] — 2026-04-21
 
 Driven by an OpenAPI spec audit (Codex, GPT-5.4 xhigh) against the

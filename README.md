@@ -45,7 +45,7 @@ elevenlabs phone call agent_xxx --from-id phnum_yyy --to +14155551234
 
 Every command auto-switches between **coloured human output** (terminal) and **JSON envelopes** (piped / `--json`). Exit codes are semantic (`0=ok, 1=transient, 2=config, 3=bad input, 4=rate limited`). Errors carry a machine-readable `code` and an actionable `suggestion` an AI agent can follow literally.
 
-**Grounded against the official [elevenlabs-js v2.43 SDK](https://github.com/elevenlabs/elevenlabs-js)** — every request/response type in this CLI was verified against the Fern-generated schema that ElevenLabs ships for their own SDK.
+**Grounded against the live OpenAPI spec** — every request/response type is verified against the vendored snapshot at [`docs/reference/openapi.elevenlabs.json`](docs/reference/openapi.elevenlabs.json), refreshable in one command via [`./docs/reference/refresh.sh`](docs/reference/refresh.sh).
 
 ---
 
@@ -56,8 +56,9 @@ Every command auto-switches between **coloured human output** (terminal) and **J
 cargo install elevenlabs          # crate name is `elevenlabs`, binary name is `elevenlabs`
 
 # Homebrew (macOS, Linux)
-brew tap 199-biotechnologies/tap
+brew tap paperfoot/tap
 brew install elevenlabs
+# (old tap `199-biotechnologies/tap` is deprecated — `brew untap` it after switching)
 
 # Prebuilt binaries — Linux, macOS (x86_64 + arm64), Windows
 curl -L https://github.com/paperfoot/elevenlabs-cli/releases/latest/download/elevenlabs-$(uname -s)-$(uname -m).tar.gz | tar xz
@@ -271,21 +272,30 @@ elevenlabs agents show <agent_id>        # alias: get
 elevenlabs agents create <name>
     --system-prompt "..."
     [--first-message "Hi, how can I help?"]
-    [--voice-id ID] [--language en] [--llm gemini-3.1-flash-lite-preview]
+    [--voice-id ID] [--language en] [--llm gemini-2.5-flash]
     [--temperature 0.5] [--model-id eleven_flash_v2_5]
-    [--expressive-mode] [--max-duration-seconds 300]
+    [--expressive-mode] [--max-duration-seconds 600]
+    [--voicemail-detection] [--voicemail-message "..."]
 elevenlabs agents update <agent_id> --patch patch.json
-elevenlabs agents delete <agent_id>      # alias: rm
+elevenlabs agents duplicate <agent_id> [--name "Clone"]
+elevenlabs agents delete <agent_id>                 # alias: rm
+elevenlabs agents llms                              # list the backend-accepted LLM allowlist
+elevenlabs agents signed-url <agent_id>             # short-lived widget/web URL
 elevenlabs agents add-knowledge <agent_id> <name> (--url URL | --file PATH | --text "...")
+elevenlabs agents knowledge list [--search TERM]    # aliases: ls
+elevenlabs agents knowledge search <query> [--document-id ID] [--limit 10]
+elevenlabs agents knowledge refresh <document_id>
 
-# --model-id allowlist: eleven_turbo_v2, eleven_turbo_v2_5, eleven_flash_v2,
-# eleven_flash_v2_5, eleven_multilingual_v2, eleven_v3_conversational.
-# Pass `eleven_v3` and you'll get an exit-3 error — that's the dialogue/ttv
-# model, not the realtime agent model. Use eleven_v3_conversational instead.
-# --expressive-mode auto-upgrades to eleven_v3_conversational.
+# --model-id allowlist: eleven_flash_v2_5 (recommended), eleven_flash_v2,
+# eleven_multilingual_v2, eleven_v3_conversational. eleven_turbo_v2_5 and
+# eleven_turbo_v2 are accepted but deprecated — prefer flash equivalents.
+# Passing `eleven_v3` is caught pre-flight (exit 3) — that's the dialogue/ttv
+# model, not the realtime agent model. --expressive-mode auto-upgrades to
+# eleven_v3_conversational.
 
 elevenlabs conversations list [--agent-id ID] [--page-size 30] [--cursor TOKEN]
 elevenlabs conversations show <conversation_id>
+elevenlabs conversations audio <conversation_id> [-o call.mp3]
 ```
 
 </details>
@@ -296,7 +306,10 @@ elevenlabs conversations show <conversation_id>
 ```bash
 elevenlabs phone list
 elevenlabs phone call <agent_id> --from-id <phone_number_id> --to +14155551234
-    [--dynamic-variables '{"name":"Alex"}']     # or @vars.json
+    [--dynamic-variables '{"name":"Alex"}']         # or @vars.json
+    [--client-data '{"conversation_config_override": {...}}']
+    [--record]                                       # Twilio only
+    [--ringing-timeout-secs 25]                      # 1-999
 ```
 
 </details>

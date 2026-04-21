@@ -60,8 +60,10 @@ pub async fn run(
     };
 
     // Build conversation_initiation_client_data. Precedence: --client-data is
-    // the base object; --dynamic-variables is merged on top (overwrites any
-    // same-named entry). Either flag alone works; both together work.
+    // the base object; --dynamic-variables is DEEP-MERGED into any existing
+    // dynamic_variables map (overriding same-named keys, preserving others)
+    // rather than replacing the map wholesale. Either flag alone works; both
+    // together work.
     let mut ci_data: Option<serde_json::Value> = match client_data.as_deref() {
         Some(raw) => Some(parse_json_object("--client-data", raw).await?),
         None => None,
@@ -70,7 +72,11 @@ pub async fn run(
         let vars = parse_json_object("--dynamic-variables", raw).await?;
         let base = ci_data.get_or_insert_with(|| serde_json::json!({}));
         let map = base.as_object_mut().expect("base is a JSON object");
-        map.insert("dynamic_variables".to_string(), vars);
+        let existing = map
+            .remove("dynamic_variables")
+            .unwrap_or_else(|| serde_json::json!({}));
+        let merged = merge_dynamic_variables(existing, vars);
+        map.insert("dynamic_variables".to_string(), merged);
     }
 
     let mut body = serde_json::json!({
@@ -82,6 +88,17 @@ pub async fn run(
         body["conversation_initiation_client_data"] = cd;
     }
     if record {
+        // call_recording_enabled is only defined on the Twilio outbound-call
+        // body in the OpenAPI spec; SIP-trunk rejects the extra field.
+        if provider != "twilio" {
+            return Err(AppError::bad_input_with(
+                format!(
+                    "--record is only supported on Twilio numbers (this number uses provider \
+                     '{provider}')"
+                ),
+                "Drop --record for SIP-trunk calls, or record via your own telephony stack.",
+            ));
+        }
         body["call_recording_enabled"] = serde_json::Value::Bool(true);
     }
     if let Some(secs) = ringing_timeout_secs {
@@ -148,6 +165,26 @@ async fn parse_json_object(flag: &str, raw: &str) -> Result<serde_json::Value, A
         ));
     }
     Ok(val)
+}
+
+/// Merge `--dynamic-variables` into an existing `dynamic_variables` map.
+/// Object-merges at one level (overriding keys from `incoming` into
+/// `existing`). If either side isn't an object, `incoming` wins — the CLI
+/// only accepts object-shaped JSON upstream via `parse_json_object`, but
+/// this stays defensive against upstream shape changes.
+fn merge_dynamic_variables(
+    existing: serde_json::Value,
+    incoming: serde_json::Value,
+) -> serde_json::Value {
+    match (existing, incoming) {
+        (serde_json::Value::Object(mut base), serde_json::Value::Object(over)) => {
+            for (k, v) in over {
+                base.insert(k, v);
+            }
+            serde_json::Value::Object(base)
+        }
+        (_, v) => v,
+    }
 }
 
 fn val_kind(v: &serde_json::Value) -> &'static str {

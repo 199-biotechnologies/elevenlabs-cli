@@ -78,6 +78,17 @@ impl ElevenLabsClient {
             .map_err(Into::into)
     }
 
+    /// GET a path and return the raw response body as bytes. Used by
+    /// `conversations audio`, `dubbing get-audio`, etc. — anywhere the
+    /// response is a binary payload (mp3/wav/mp4/zip) rather than JSON.
+    /// Status + error body handling routes through the same `check_status`
+    /// pipeline as every other method so error shape stays consistent.
+    pub async fn get_bytes(&self, path: &str) -> Result<bytes::Bytes, AppError> {
+        let resp = self.http.get(self.url(path)).send().await?;
+        let resp = check_status(resp).await?;
+        Ok(resp.bytes().await?)
+    }
+
     pub async fn get_json_with_query<T: DeserializeOwned, Q: Serialize + ?Sized>(
         &self,
         path: &str,

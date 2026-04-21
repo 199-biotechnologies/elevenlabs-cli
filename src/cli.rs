@@ -1175,10 +1175,12 @@ pub enum AgentsAction {
         #[arg(long, default_value = "en")]
         language: String,
 
-        /// LLM id. Default gemini-3.1-flash-lite-preview. The Agents backend
-        /// enforces its own allowlist — if conversations show 0 output tokens
-        /// the LLM fell off the list; switch to a safer default.
-        #[arg(long, default_value = "gemini-3.1-flash-lite-preview")]
+        /// LLM id. Default `gemini-2.5-flash` (matches the OpenAPI spec's
+        /// current default on `PromptAgentAPIModel.llm`). Discover the full
+        /// backend allowlist with `elevenlabs agents llms`. If
+        /// `conversations show` reports 0 output tokens on the chosen LLM,
+        /// the backend rejected it and fell back silently — swap LLMs.
+        #[arg(long, default_value = "gemini-2.5-flash")]
         llm: String,
 
         /// Temperature 0.0-1.0
@@ -1196,15 +1198,17 @@ pub enum AgentsAction {
         /// Enable expressive v3 prosody. Only honoured with
         /// model_id=eleven_v3_conversational; the server silently drops it on
         /// every other model. Setting this flag without --model-id auto-
-        /// upgrades to eleven_v3_conversational. Requires a tier that has
-        /// access to expressive TTS (Creator+ at the time of writing).
+        /// upgrades to eleven_v3_conversational. Requires a plan with access
+        /// to expressive TTS — if the API returns "Expressive TTS is not
+        /// allowed", upgrade the plan.
         #[arg(long)]
         expressive_mode: bool,
 
-        /// Max call duration in seconds. Default 300 (5 min). Bump to 1800
-        /// (30 min) or higher for long-form interviews / coaching — calls hang
-        /// up hard at this limit regardless of transcript state.
-        #[arg(long, default_value = "300")]
+        /// Max call duration in seconds. Default 600 (10 min, matching the
+        /// OpenAPI spec's current default). Bump to 1800 (30 min) or higher
+        /// for long-form interviews / coaching — calls hang up hard at this
+        /// limit regardless of transcript state.
+        #[arg(long, default_value = "600")]
         max_duration_seconds: u32,
 
         /// Register the `voicemail_detection` system tool. Almost always
@@ -1464,8 +1468,12 @@ pub enum PhoneAction {
 
         /// Max seconds to ring the callee before giving up. Maps to
         /// `telephony_call_config.ringing_timeout_secs` on the
-        /// outbound-call body.
-        #[arg(long, value_name = "SECS")]
+        /// outbound-call body. Spec range: 1-999.
+        #[arg(
+            long,
+            value_name = "SECS",
+            value_parser = clap::value_parser!(u32).range(1..=999)
+        )]
         ringing_timeout_secs: Option<u32>,
     },
 

@@ -26,9 +26,13 @@ upstream API change or before opening a coverage-audit PR.
 # Compare CLI coverage to spec:
 diff <(awk '{print $1, $2}' docs/reference/endpoints-inventory.txt | sort -u) \
      <(awk '{print $1, $2}' docs/reference/cli-endpoints.txt | sort -u)
-
-# Or let Codex do it (see docs/reference/audit-prompt.md for the brief
-# we used to seed an audit in 2026-04).
 ```
+
+## Historical audits
+
+- [`spec-audit-pre-v0.3.0.md`](spec-audit-pre-v0.3.0.md) — Codex audit of
+  v0.2.2 that drove the v0.3.0 release (2026-04-21).
+- [`post-ship-review-v0.3.0.md`](post-ship-review-v0.3.0.md) — follow-up
+  review of the v0.3.0 work that drove v0.3.1 (same day).
 
 Upstream-spec URL: https://api.elevenlabs.io/openapi.json
